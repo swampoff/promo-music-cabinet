@@ -1,0 +1,69 @@
+{
+  "cabinet_id": "artist-promo-music",
+  "cabinet_name": "Кабинет Артиста - Promo.Music",
+  "version": "1.0.0",
+  "description": "Enterprise-уровень маркетинговой экосистемы для музыкантов с аналитикой, донатами, управлением контентом, концертами и системой коинов",
+  
+  "database": {
+    "migrations": [
+      "database/001_promotion_tables.sql"
+    ],
+    "tables": [
+      "pitching_requests",
+      "production_360_requests",
+      "marketing_campaigns",
+      "media_outreach_requests",
+      "event_requests",
+      "promo_lab_experiments",
+      "editor_responses",
+      "promotion_transactions"
+    ]
+  },
+
+  "backend": {
+    "edge_functions": [
+      {
+        "name": "make-server-84730125",
+        "entry": "backend/index.tsx",
+        "imports": [
+          "backend/promotion-routes-sql.tsx",
+          "backend/db-init.tsx"
+        ]
+      }
+    ]
+  },
+
+  "frontend": {
+    "pages": [
+      "frontend/pages/PromotionHub.tsx",
+      "frontend/pages/PromotionPitching.tsx",
+      "frontend/pages/PromotionProduction360.tsx",
+      "frontend/pages/PromotionMarketing.tsx",
+      "frontend/pages/PromotionMedia.tsx",
+      "frontend/pages/PromotionEvent.tsx",
+      "frontend/pages/PromotionPromoLab.tsx"
+    ],
+    "contexts": [
+      "frontend/contexts/SubscriptionContext.tsx",
+      "frontend/contexts/AuthContext.tsx"
+    ]
+  },
+
+  "storage": {
+    "buckets": [
+      {
+        "name": "make-84730125-media",
+        "public": false,
+        "allowed_mime_types": ["image/*", "video/*", "audio/*"],
+        "file_size_limit": 52428800
+      }
+    ]
+  },
+
+  "auth": {
+    "providers": ["email", "google"],
+    "email_confirm_required": false
+  },
+
+  "subscription_tiers": ["Free", "Basic", "Pro", "Premium"]
+}
