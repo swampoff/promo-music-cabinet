@@ -1,9 +1,12 @@
 import { Play, Pause, Upload, Music, Image as ImageIcon, TrendingUp, Heart, Share2, Trash2, X, Check, Clock, XCircle, Coins, AlertCircle, Loader2, ChevronDown, Filter, Search, Edit2, Eye, EyeOff, Radio, Send, Building2, Users as UsersIcon, Sparkles, ExternalLink, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { TrackPitchingModal } from '@/app/components/track-pitching-modal';
 import { useSubscription, subscriptionHelpers } from '@/contexts/SubscriptionContext';
+import { api } from '@/lib/api-client';
+import { useApiQuery, useApiMutation } from '@/hooks/useApiQuery';
+import { toast } from 'sonner';
 
 type TrackStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 
@@ -60,179 +63,83 @@ interface TracksPageProps {
 }
 
 export function TracksPage({ userCoins, onCoinsUpdate, onTrackClick }: TracksPageProps) {
-  const [tracks, setTracks] = useState<Track[]>([
-    { 
-      id: 1, 
-      title: 'Midnight Dreams', 
-      cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400',
-      genre: 'Electronic',
-      description: 'Атмосферный электронный трек с глубоким басом',
-      tags: ['electronic', 'ambient', 'chill'],
-      year: '2026',
-      label: 'Independent',
-      authors: 'DJ Midnight',
-      plays: 2400, 
-      likes: 340, 
-      duration: '3:45', 
-      status: 'approved',
-      uploadedAt: '2 дня назад',
-      isPaid: true,
-      releaseDate: '2026-06-15',
-      credits: {
-        musicComposer: 'DJ Midnight',
-        lyricist: 'DJ Midnight',
-        mixing: 'DJ Midnight',
-        mastering: 'DJ Midnight',
-        producer: 'DJ Midnight',
-        arranger: 'DJ Midnight',
-        soundEngineer: 'DJ Midnight'
-      },
-      rights: {
-        copyright: '© 2026 DJ Midnight',
-        phonographicCopyright: '℗ 2026 DJ Midnight',
-        publisher: 'Independent',
-        isrc: 'US-XYZ-26-00001',
-        upc: '888888888888'
-      }
+  // API запросы
+  const { data: apiTracks, isLoading: isLoadingTracks, error: tracksError, refetch: refetchTracks, mutate: mutateTracks } = useApiQuery<any[]>(
+    () => api.tracks.list(),
+    {
+      onError: (error) => toast.error(`Ошибка загрузки треков: ${error}`),
+    }
+  );
+
+  // Преобразование данных API в формат компонента
+  const mapApiTrackToTrack = useCallback((apiTrack: any): Track => ({
+    id: apiTrack.id,
+    title: apiTrack.title || '',
+    cover: apiTrack.cover_url || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400',
+    audioFile: apiTrack.audio_url,
+    genre: apiTrack.genre || '',
+    description: apiTrack.description || '',
+    tags: apiTrack.tags || [],
+    year: apiTrack.release_year?.toString() || new Date().getFullYear().toString(),
+    label: apiTrack.label || '',
+    authors: apiTrack.artist_name || '',
+    duration: apiTrack.duration || '0:00',
+    plays: apiTrack.play_count || 0,
+    likes: apiTrack.like_count || 0,
+    status: apiTrack.status || 'draft',
+    rejectionReason: apiTrack.rejection_reason,
+    uploadedAt: apiTrack.created_at ? new Date(apiTrack.created_at).toLocaleDateString('ru-RU') : '',
+    isPaid: apiTrack.is_promoted || false,
+    releaseDate: apiTrack.release_date || '',
+    credits: {
+      musicComposer: apiTrack.credits?.music_composer || '',
+      lyricist: apiTrack.credits?.lyricist || '',
+      mixing: apiTrack.credits?.mixing || '',
+      mastering: apiTrack.credits?.mastering || '',
+      producer: apiTrack.credits?.producer || '',
+      arranger: apiTrack.credits?.arranger || '',
+      soundEngineer: apiTrack.credits?.sound_engineer || '',
     },
-    { 
-      id: 2, 
-      title: 'Electric Soul', 
-      cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400',
-      genre: 'R&B',
-      description: 'Душевный R&B с элементами фанка',
-      tags: ['rnb', 'soul', 'funk'],
-      year: '2026',
-      label: 'Soul Records',
-      authors: 'Soul Master',
-      plays: 1800, 
-      likes: 280, 
-      duration: '4:12', 
-      status: 'approved',
-      uploadedAt: '5 дней назад',
-      isPaid: false,
-      releaseDate: '2026-06-15',
-      credits: {
-        musicComposer: 'Soul Master',
-        lyricist: 'Soul Master',
-        mixing: 'Soul Master',
-        mastering: 'Soul Master',
-        producer: 'Soul Master',
-        arranger: 'Soul Master',
-        soundEngineer: 'Soul Master'
-      },
-      rights: {
-        copyright: '© 2026 Soul Master',
-        phonographicCopyright: '℗ 2026 Soul Master',
-        publisher: 'Soul Records',
-        isrc: 'US-XYZ-26-00002',
-        upc: '888888888889'
-      }
+    rights: {
+      copyright: apiTrack.rights?.copyright || '',
+      phonographicCopyright: apiTrack.rights?.phonographic_copyright || '',
+      publisher: apiTrack.rights?.publisher || '',
+      isrc: apiTrack.rights?.isrc || '',
+      upc: apiTrack.rights?.upc || '',
     },
-    { 
-      id: 3, 
-      title: 'Summer Vibes', 
-      cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400',
-      genre: 'Pop',
-      description: 'Летний поп-хит с позитивной энергией',
-      tags: ['pop', 'summer', 'happy'],
-      year: '2026',
-      label: 'Sunshine Music',
-      authors: 'Sunny Band',
-      plays: 3100, 
-      likes: 420, 
-      duration: '3:28', 
-      status: 'pending',
-      uploadedAt: '1 день назад',
-      isPaid: false,
-      releaseDate: '2026-06-15',
-      credits: {
-        musicComposer: 'Sunny Band',
-        lyricist: 'Sunny Band',
-        mixing: 'Sunny Band',
-        mastering: 'Sunny Band',
-        producer: 'Sunny Band',
-        arranger: 'Sunny Band',
-        soundEngineer: 'Sunny Band'
+  }), []);
+
+  const [tracks, setTracks] = useState<Track[]>([]);
+
+  // Обновление состояния при получении данных из API
+  useEffect(() => {
+    if (apiTracks && Array.isArray(apiTracks)) {
+      setTracks(apiTracks.map(mapApiTrackToTrack));
+    }
+  }, [apiTracks, mapApiTrackToTrack]);
+
+  // Мутации для создания/удаления
+  const createTrackMutation = useApiMutation<any, any>(
+    (data) => api.tracks.create(data),
+    {
+      onSuccess: () => {
+        toast.success('Трек успешно загружен');
+        refetchTracks();
       },
-      rights: {
-        copyright: '© 2026 Sunny Band',
-        phonographicCopyright: '℗ 2026 Sunny Band',
-        publisher: 'Sunshine Music',
-        isrc: 'US-XYZ-26-00003',
-        upc: '888888888890'
-      }
-    },
-    { 
-      id: 4, 
-      title: 'Neon Nights', 
-      cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400',
-      genre: 'Electronic',
-      description: 'Энергичный синтвейв трек',
-      tags: ['synthwave', 'retro', 'electronic'],
-      year: '2025',
-      label: 'Neon Records',
-      authors: 'Neon Artist',
-      plays: 0, 
-      likes: 0, 
-      duration: '4:55', 
-      status: 'draft',
-      uploadedAt: '3 дня назад',
-      isPaid: false,
-      releaseDate: '2026-06-15',
-      credits: {
-        musicComposer: 'Neon Artist',
-        lyricist: 'Neon Artist',
-        mixing: 'Neon Artist',
-        mastering: 'Neon Artist',
-        producer: 'Neon Artist',
-        arranger: 'Neon Artist',
-        soundEngineer: 'Neon Artist'
+      onError: (error) => toast.error(`Ошибка загрузки: ${error}`),
+    }
+  );
+
+  const deleteTrackMutation = useApiMutation<any, string>(
+    (id) => api.tracks.delete(id),
+    {
+      onSuccess: () => {
+        toast.success('Трек удален');
+        refetchTracks();
       },
-      rights: {
-        copyright: '© 2026 Neon Artist',
-        phonographicCopyright: '℗ 2026 Neon Artist',
-        publisher: 'Neon Records',
-        isrc: 'US-XYZ-26-00004',
-        upc: '888888888891'
-      }
-    },
-    { 
-      id: 5, 
-      title: 'Urban Jungle', 
-      cover: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400',
-      genre: 'Hip-Hop',
-      description: 'Урбанистический хип-хоп бит',
-      tags: ['hiphop', 'urban', 'beats'],
-      year: '2026',
-      label: 'Street Beats',
-      authors: 'Urban Poet',
-      plays: 0, 
-      likes: 0, 
-      duration: '3:33', 
-      status: 'rejected',
-      rejectionReason: 'Низкое качество аудио. Пожалуйста, загрузите файл с битрейтом не менее 320kbps.',
-      uploadedAt: '1 неделю назад',
-      isPaid: false,
-      releaseDate: '2026-06-15',
-      credits: {
-        musicComposer: 'Urban Poet',
-        lyricist: 'Urban Poet',
-        mixing: 'Urban Poet',
-        mastering: 'Urban Poet',
-        producer: 'Urban Poet',
-        arranger: 'Urban Poet',
-        soundEngineer: 'Urban Poet'
-      },
-      rights: {
-        copyright: '© 2026 Urban Poet',
-        phonographicCopyright: '℗ 2026 Urban Poet',
-        publisher: 'Street Beats',
-        isrc: 'US-XYZ-26-00005',
-        upc: '888888888892'
-      }
-    },
-  ]);
+      onError: (error) => toast.error(`Ошибка удаления: ${error}`),
+    }
+  );
 
   // Get subscription limits
   const { subscription } = useSubscription();
@@ -379,80 +286,122 @@ export function TracksPage({ userCoins, onCoinsUpdate, onTrackClick }: TracksPag
     setIsUploading(true);
     setUploadProgress(0);
 
-    // Симуляция загрузки
-    for (let i = 0; i <= 100; i += 10) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      setUploadProgress(i);
-    }
-
-    const newTrack: Track = {
-      id: Date.now(),
+    // Подготовка данных для API
+    const trackData = {
       title: uploadForm.title,
-      cover: coverPreview || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400',
       genre: uploadForm.genre,
       description: uploadForm.description,
       tags: uploadForm.tags.split(',').map(t => t.trim()).filter(t => t),
-      year: uploadForm.year,
+      release_year: parseInt(uploadForm.year) || new Date().getFullYear(),
       label: uploadForm.label,
-      authors: uploadForm.authors,
-      duration: '3:45', // В реальности определяется из аудио
-      plays: 0,
-      likes: 0,
+      artist_name: uploadForm.authors,
       status: isDraft ? 'draft' : 'pending',
-      uploadedAt: 'Только что',
-      isPaid: false,
-      releaseDate: '2026-06-15',
+      cover_url: coverPreview,
       credits: {
-        musicComposer: uploadForm.authors,
-        lyricist: uploadForm.authors,
-        mixing: uploadForm.authors,
-        mastering: uploadForm.authors,
-        producer: uploadForm.authors,
-        arranger: uploadForm.authors,
-        soundEngineer: uploadForm.authors
+        music_composer: uploadForm.musicComposer || uploadForm.authors,
+        lyricist: uploadForm.lyricist,
+        arranger: uploadForm.arranger,
+        producer: uploadForm.producer,
+        sound_engineer: uploadForm.soundEngineer,
+        mastering: uploadForm.masteringEngineer,
       },
       rights: {
-        copyright: `© 2026 ${uploadForm.authors}`,
-        phonographicCopyright: `℗ 2026 ${uploadForm.authors}`,
-        publisher: uploadForm.label,
-        isrc: 'US-XYZ-26-00006',
-        upc: '888888888893'
-      }
+        copyright: uploadForm.copyrightHolder || `© ${uploadForm.year} ${uploadForm.authors}`,
+        phonographic_copyright: uploadForm.neighboringRights || `℗ ${uploadForm.year} ${uploadForm.authors}`,
+        publisher: uploadForm.publishingRights || uploadForm.label,
+        isrc: uploadForm.isrc,
+        upc: uploadForm.upc,
+        license_type: uploadForm.licenseType,
+      },
     };
 
-    setTracks([newTrack, ...tracks]);
-    setIsUploading(false);
-    setShowUploadModal(false);
-    
-    // Сброс формы
-    setUploadForm({
-      title: '',
-      genre: '',
-      description: '',
-      tags: '',
-      year: new Date().getFullYear().toString(),
-      label: '',
-      authors: '',
-      musicComposer: '',
-      lyricist: '',
-      arranger: '',
-      performer: '',
-      soundEngineer: '',
-      masteringEngineer: '',
-      producer: '',
-      recordingStudio: '',
-      copyrightHolder: '',
-      publishingRights: '',
-      masterRightsHolder: '',
-      neighboringRights: '',
-      isrc: '',
-      upc: '',
-      licenseType: 'all-rights-reserved',
-    });
-    setCoverPreview(null);
-    setAudioFileName(null);
-    setUploadProgress(0);
-    setValidationErrors({});
+    // Симуляция прогресса загрузки
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => Math.min(prev + 10, 90));
+    }, 200);
+
+    try {
+      const result = await createTrackMutation.mutateAsync(trackData);
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      if (result.success) {
+        // Оптимистичное добавление в UI
+        const newTrack: Track = {
+          id: result.data?.id || Date.now(),
+          title: uploadForm.title,
+          cover: coverPreview || 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400',
+          genre: uploadForm.genre,
+          description: uploadForm.description,
+          tags: uploadForm.tags.split(',').map(t => t.trim()).filter(t => t),
+          year: uploadForm.year,
+          label: uploadForm.label,
+          authors: uploadForm.authors,
+          duration: '0:00',
+          plays: 0,
+          likes: 0,
+          status: isDraft ? 'draft' : 'pending',
+          uploadedAt: 'Только что',
+          isPaid: false,
+          releaseDate: new Date().toISOString().split('T')[0],
+          credits: {
+            musicComposer: uploadForm.musicComposer || uploadForm.authors,
+            lyricist: uploadForm.lyricist,
+            mixing: '',
+            mastering: uploadForm.masteringEngineer,
+            producer: uploadForm.producer,
+            arranger: uploadForm.arranger,
+            soundEngineer: uploadForm.soundEngineer,
+          },
+          rights: {
+            copyright: uploadForm.copyrightHolder || `© ${uploadForm.year} ${uploadForm.authors}`,
+            phonographicCopyright: uploadForm.neighboringRights || `℗ ${uploadForm.year} ${uploadForm.authors}`,
+            publisher: uploadForm.publishingRights || uploadForm.label,
+            isrc: uploadForm.isrc,
+            upc: uploadForm.upc,
+          },
+        };
+
+        setTracks([newTrack, ...tracks]);
+        setShowUploadModal(false);
+
+        // Сброс формы
+        setUploadForm({
+          title: '',
+          genre: '',
+          description: '',
+          tags: '',
+          year: new Date().getFullYear().toString(),
+          label: '',
+          authors: '',
+          musicComposer: '',
+          lyricist: '',
+          arranger: '',
+          performer: '',
+          soundEngineer: '',
+          masteringEngineer: '',
+          producer: '',
+          recordingStudio: '',
+          copyrightHolder: '',
+          publishingRights: '',
+          masterRightsHolder: '',
+          neighboringRights: '',
+          isrc: '',
+          upc: '',
+          licenseType: 'all-rights-reserved',
+        });
+        setCoverPreview(null);
+        setAudioFileName(null);
+        setValidationErrors({});
+      }
+    } catch (error) {
+      clearInterval(progressInterval);
+      console.error('Upload error:', error);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   // Оплата продвижения
@@ -486,6 +435,8 @@ export function TracksPage({ userCoins, onCoinsUpdate, onTrackClick }: TracksPag
   // Удаление трека
   const handleDeleteTrack = (trackId: number) => {
     if (confirm('Вы уверены, что хотите удалить этот трек?')) {
+      deleteTrackMutation.mutate(trackId.toString());
+      // Оптимистичное обновление UI
       setTracks(tracks.filter(t => t.id !== trackId));
     }
   };
@@ -672,11 +623,16 @@ export function TracksPage({ userCoins, onCoinsUpdate, onTrackClick }: TracksPag
         transition={{ delay: 0.3 }}
         className="space-y-4"
       >
-        {filteredTracks.length === 0 ? (
+        {isLoadingTracks ? (
+          <div className="p-12 rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 text-center">
+            <Loader2 className="w-16 h-16 text-cyan-400 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-300 text-lg">Загрузка треков...</p>
+          </div>
+        ) : filteredTracks.length === 0 ? (
           <div className="p-12 rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 border-dashed text-center">
             <Music className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-300 text-lg mb-4">
-              {searchQuery ? 'Треки не найдены' : 'У вас пока нет треков'}
+              {tracksError ? `Ошибка: ${tracksError}` : searchQuery ? 'Треки не найдены' : 'У вас пока нет треков'}
             </p>
             {!searchQuery && (
               <motion.button

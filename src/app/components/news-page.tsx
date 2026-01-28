@@ -1,8 +1,11 @@
 import { Plus, Calendar, Eye, MessageSquare, Heart, Trash2, X, Edit2, Image as ImageIcon, Send, Check, Clock, Sparkles, Filter, Search, TrendingUp, Share2, XCircle, AlertCircle, Coins, Upload, Loader2, Info, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { validateNewsImage, getNewsImageRecommendations, formatFileSize, ImageValidationResult } from '@/utils/news-image-validation';
+import { api } from '@/lib/api-client';
+import { useApiQuery, useApiMutation } from '@/hooks/useApiQuery';
+import { toast } from 'sonner';
 
 type NewsStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 
@@ -29,79 +32,77 @@ interface NewsPageProps {
 }
 
 export function NewsPage({ userCoins, onCoinsUpdate, onNewsUpdate }: NewsPageProps) {
-  const [newsItems, setNewsItems] = useState<NewsItem[]>([
+  // API запросы
+  const { data: apiNews, isLoading: isLoadingNews, error: newsError, refetch: refetchNews } = useApiQuery<any[]>(
+    () => api.news.list(),
     {
-      id: 1,
-      title: 'Новый альбом уже скоро!',
-      preview: 'Рад сообщить, что работа над новым альбомом практически завершена...',
-      content: 'Рад сообщить, что работа над новым альбомом практически завершена! Это был долгий путь, но результат превзошел все ожидания. Записали 12 треков, каждый из которых особенный. Скоро поделюсь первым синглом с вами!',
-      coverImage: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=800',
-      date: '2026-01-20',
-      status: 'approved',
-      views: 12400,
-      likes: 850,
-      comments: 145,
-      isPaid: true,
-      createdAt: '5 дней назад',
-    },
+      onError: (error) => toast.error(`Ошибка загрузки новостей: ${error}`),
+    }
+  );
+
+  // Преобразование данных API в формат компонента
+  const mapApiNewsToNews = useCallback((apiItem: any): NewsItem => ({
+    id: apiItem.id,
+    title: apiItem.title || '',
+    preview: apiItem.preview || apiItem.content?.slice(0, 100) + '...' || '',
+    content: apiItem.content || '',
+    coverImage: apiItem.cover_image_url || 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=800',
+    date: apiItem.published_at || apiItem.created_at || new Date().toISOString(),
+    status: apiItem.status || 'draft',
+    rejectionReason: apiItem.rejection_reason,
+    views: apiItem.view_count || 0,
+    likes: apiItem.like_count || 0,
+    comments: apiItem.comment_count || 0,
+    isPaid: apiItem.is_promoted || false,
+    createdAt: apiItem.created_at ? new Date(apiItem.created_at).toLocaleDateString('ru-RU') : '',
+  }), []);
+
+  const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
+
+  // Обновление состояния при получении данных из API
+  useEffect(() => {
+    if (apiNews && Array.isArray(apiNews)) {
+      const mappedNews = apiNews.map(mapApiNewsToNews);
+      setNewsItems(mappedNews);
+      if (onNewsUpdate) {
+        onNewsUpdate(mappedNews);
+      }
+    }
+  }, [apiNews, mapApiNewsToNews, onNewsUpdate]);
+
+  // Мутации для создания/удаления
+  const createNewsMutation = useApiMutation<any, any>(
+    (data) => api.news.create(data),
     {
-      id: 2,
-      title: 'Спасибо за 10К подписчиков!',
-      preview: 'Невероятно! Мы достигли отметки в 10 тысяч подписчиков...',
-      content: 'Невероятно! Мы достигли отметки в 10 тысяч подписчиков на всех платформах! Спасибо каждому из вас за поддержку, это значит очень много для меня. Вместе мы создаем что-то особенное!',
-      coverImage: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=800',
-      date: '2026-01-15',
-      status: 'approved',
-      views: 23400,
-      likes: 1920,
-      comments: 328,
-      isPaid: false,
-      createdAt: '1 неделю назад',
-    },
+      onSuccess: () => {
+        toast.success('Новость успешно создана');
+        refetchNews();
+      },
+      onError: (error) => toast.error(`Ошибка создания: ${error}`),
+    }
+  );
+
+  const deleteNewsMutation = useApiMutation<any, string>(
+    (id) => api.news.delete(id),
     {
-      id: 3,
-      title: 'Анонс летнего тура',
-      preview: 'Этим летом планируется большой тур по городам России...',
-      content: 'Этим летом планируется большой тур по городам России! Мы посетим более 15 городов. Уже сейчас можно приобрести билеты на первые даты. Не пропустите!',
-      coverImage: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
-      date: '2026-01-10',
-      status: 'pending',
-      views: 0,
-      likes: 0,
-      comments: 0,
-      isPaid: false,
-      createdAt: '2 недели назад',
-    },
+      onSuccess: () => {
+        toast.success('Новость удалена');
+        refetchNews();
+      },
+      onError: (error) => toast.error(`Ошибка удаления: ${error}`),
+    }
+  );
+
+  const updateNewsMutation = useApiMutation<any, { id: string; data: any }>(
+    ({ id, data }) => api.news.update(id, data),
     {
-      id: 4,
-      title: 'Закулисье студии',
-      preview: 'Хочу показать вам, как проходит процесс записи...',
-      content: 'Хочу показать вам, как проходит процесс записи нового материала. Это всегда магия и вдохновение! Работаем днем и ночью, чтобы создать идеальный звук.',
-      coverImage: 'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?w=800',
-      date: '2026-01-05',
-      status: 'draft',
-      views: 0,
-      likes: 0,
-      comments: 0,
-      isPaid: false,
-      createdAt: '3 недели назад',
-    },
-    {
-      id: 5,
-      title: 'Новый мерч уже в продаже',
-      preview: 'Запустили линейку официального мерча с новым дизайном...',
-      content: 'Запустили линейку официального мерча с новым дизайном! Футболки, худи, кепки - все с эксклюзивным оформлением. Заказывайте на нашем сайте!',
-      coverImage: 'https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=800',
-      date: '2026-01-01',
-      status: 'rejected',
-      rejectionReason: 'Изображение не соответствует требованиям. Минимальное разрешение: 800x450px. Рекомендуем использовать горизонтальные изображения в соотношении 1.91:1 для лучшего отображения в социальных сетях.',
-      views: 0,
-      likes: 0,
-      comments: 0,
-      isPaid: false,
-      createdAt: '1 месяц назад',
-    },
-  ]);
+      onSuccess: () => {
+        toast.success('Новость обновлена');
+        refetchNews();
+      },
+      onError: (error) => toast.error(`Ошибка обновления: ${error}`),
+    }
+  );
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -229,33 +230,55 @@ export function NewsPage({ userCoins, onCoinsUpdate, onNewsUpdate }: NewsPagePro
     setIsUploading(true);
     setUploadProgress(0);
 
-    // Симуляция загрузки
-    for (let i = 0; i <= 100; i += 5) {
-      await new Promise(resolve => setTimeout(resolve, 50));
-      setUploadProgress(i);
-    }
-
-    const preview = createForm.content.slice(0, 100) + (createForm.content.length > 100 ? '...' : '');
-    
-    const newNews: NewsItem = {
-      id: Date.now(),
+    // Подготовка данных для API
+    const newsData = {
       title: createForm.title,
       content: createForm.content,
-      preview: preview,
-      coverImage: coverImagePreview,
-      date: new Date().toISOString().split('T')[0],
+      preview: createForm.content.slice(0, 100) + (createForm.content.length > 100 ? '...' : ''),
+      cover_image_url: coverImagePreview,
       status: isDraft ? 'draft' : 'pending',
-      views: 0,
-      likes: 0,
-      comments: 0,
-      isPaid: false,
-      createdAt: 'Только что',
     };
 
-    const updatedNews = [newNews, ...newsItems];
-    updateNews(updatedNews);
-    setShowCreateModal(false);
-    resetForm();
+    // Симуляция прогресса загрузки
+    const progressInterval = setInterval(() => {
+      setUploadProgress(prev => Math.min(prev + 5, 90));
+    }, 50);
+
+    try {
+      const result = await createNewsMutation.mutateAsync(newsData);
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      if (result.success) {
+        // Оптимистичное добавление в UI
+        const newNews: NewsItem = {
+          id: result.data?.id || Date.now(),
+          title: createForm.title,
+          content: createForm.content,
+          preview: createForm.content.slice(0, 100) + (createForm.content.length > 100 ? '...' : ''),
+          coverImage: coverImagePreview,
+          date: new Date().toISOString().split('T')[0],
+          status: isDraft ? 'draft' : 'pending',
+          views: 0,
+          likes: 0,
+          comments: 0,
+          isPaid: false,
+          createdAt: 'Только что',
+        };
+
+        const updatedNews = [newNews, ...newsItems];
+        updateNews(updatedNews);
+        setShowCreateModal(false);
+        resetForm();
+      }
+    } catch (error) {
+      clearInterval(progressInterval);
+      console.error('Create error:', error);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
+    }
   };
 
   // Сброс формы
@@ -279,6 +302,8 @@ export function NewsPage({ userCoins, onCoinsUpdate, onNewsUpdate }: NewsPagePro
   // Удаление новости
   const handleDeleteNews = (newsId: number) => {
     if (confirm('Вы уверены, что хотите удалить эту новость?')) {
+      deleteNewsMutation.mutate(newsId.toString());
+      // Оптимистичное обновление UI
       const updatedNews = newsItems.filter(n => n.id !== newsId);
       updateNews(updatedNews);
     }
@@ -286,8 +311,13 @@ export function NewsPage({ userCoins, onCoinsUpdate, onNewsUpdate }: NewsPagePro
 
   // Публикация черновика (отправка на модерацию)
   const handlePublishDraft = (newsId: number) => {
-    const updatedNews = newsItems.map(n => 
-      n.id === newsId 
+    updateNewsMutation.mutate({
+      id: newsId.toString(),
+      data: { status: 'pending' }
+    });
+    // Оптимистичное обновление UI
+    const updatedNews = newsItems.map(n =>
+      n.id === newsId
         ? { ...n, status: 'pending' as NewsStatus, date: new Date().toISOString().split('T')[0] }
         : n
     );
@@ -529,11 +559,16 @@ export function NewsPage({ userCoins, onCoinsUpdate, onNewsUpdate }: NewsPagePro
         transition={{ delay: 0.45 }}
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-5 lg:gap-6"
       >
-        {filteredNews.length === 0 ? (
+        {isLoadingNews ? (
+          <div className="col-span-full p-8 sm:p-10 md:p-12 rounded-xl sm:rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 text-center">
+            <Loader2 className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-orange-400 mx-auto mb-3 sm:mb-4 animate-spin" />
+            <p className="text-gray-300 text-base sm:text-lg md:text-xl">Загрузка новостей...</p>
+          </div>
+        ) : filteredNews.length === 0 ? (
           <div className="col-span-full p-8 sm:p-10 md:p-12 rounded-xl sm:rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 border-dashed text-center">
             <Calendar className="w-12 h-12 sm:w-14 sm:h-14 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 sm:mb-4" />
             <p className="text-gray-300 text-base sm:text-lg md:text-xl mb-3 sm:mb-4">
-              {searchQuery ? 'Новости не найдены' : 'У вас пока нет новостей'}
+              {newsError ? `Ошибка: ${newsError}` : searchQuery ? 'Новости не найдены' : 'У вас пока нет новостей'}
             </p>
             {!searchQuery && (
               <motion.button

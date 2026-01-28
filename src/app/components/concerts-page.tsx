@@ -1,8 +1,11 @@
 import { Calendar, MapPin, Ticket, Trash2, X, Check, Clock, XCircle, Coins, AlertCircle, Loader2, Filter, Search, Edit2, Sparkles, TrendingUp, Share2, Eye, MousePointerClick, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { ConcertUploadModal } from '@/app/components/concert-upload-modal';
+import { api } from '@/lib/api-client';
+import { useApiQuery, useApiMutation } from '@/hooks/useApiQuery';
+import { toast } from 'sonner';
 
 type ConcertStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 
@@ -44,104 +47,67 @@ interface ConcertsPageProps {
 }
 
 export function ConcertsPage({ userCoins, onCoinsUpdate }: ConcertsPageProps) {
-  const [concerts, setConcerts] = useState<ConcertItem[]>([
+  // API запросы
+  const { data: apiConcerts, isLoading: isLoadingConcerts, error: concertsError, refetch: refetchConcerts } = useApiQuery<any[]>(
+    () => api.concerts.list(),
     {
-      id: 1,
-      title: 'Summer Music Fest 2026',
-      date: '2026-06-15',
-      time: '19:00',
-      city: 'Москва',
-      venue: 'Олимпийский',
-      type: 'Фестиваль',
-      description: 'Грандиозный летний фестиваль с участием топовых артистов',
-      banner: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800',
-      ticketPriceFrom: '2000',
-      ticketPriceTo: '8000',
-      ticketLink: 'https://tickets.example.com/summer-fest',
-      status: 'approved',
-      views: 15400,
-      clicks: 850,
-      isPaid: true,
-      createdAt: '5 дней назад',
-    },
+      onError: (error) => toast.error(`Ошибка загрузки концертов: ${error}`),
+    }
+  );
+
+  // Преобразование данных API в формат компонента
+  const mapApiConcertToConcert = useCallback((apiConcert: any): ConcertItem => ({
+    id: apiConcert.id,
+    title: apiConcert.title || '',
+    date: apiConcert.event_date || apiConcert.date || '',
+    time: apiConcert.event_time || apiConcert.time || '19:00',
+    city: apiConcert.city || '',
+    venue: apiConcert.venue || '',
+    type: apiConcert.event_type || apiConcert.type || 'Концерт',
+    description: apiConcert.description || '',
+    banner: apiConcert.banner_url || 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800',
+    ticketPriceFrom: apiConcert.ticket_price_from?.toString() || '',
+    ticketPriceTo: apiConcert.ticket_price_to?.toString() || '',
+    ticketLink: apiConcert.ticket_url || '',
+    status: apiConcert.status || 'draft',
+    rejectionReason: apiConcert.rejection_reason,
+    views: apiConcert.view_count || 0,
+    clicks: apiConcert.click_count || 0,
+    isPaid: apiConcert.is_promoted || false,
+    createdAt: apiConcert.created_at ? new Date(apiConcert.created_at).toLocaleDateString('ru-RU') : '',
+  }), []);
+
+  const [concerts, setConcerts] = useState<ConcertItem[]>([]);
+
+  // Обновление состояния при получении данных из API
+  useEffect(() => {
+    if (apiConcerts && Array.isArray(apiConcerts)) {
+      setConcerts(apiConcerts.map(mapApiConcertToConcert));
+    }
+  }, [apiConcerts, mapApiConcertToConcert]);
+
+  // Мутации для создания/удаления
+  const createConcertMutation = useApiMutation<any, any>(
+    (data) => api.concerts.create(data),
     {
-      id: 2,
-      title: 'Acoustic Night',
-      date: '2026-04-20',
-      time: '20:00',
-      city: 'Санкт-Петербург',
-      venue: 'A2 Green Concert',
-      type: 'Акустический сет',
-      description: 'Интимный акустический концерт в камерной обстановке',
-      banner: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
-      ticketPriceFrom: '1500',
-      ticketPriceTo: '3500',
-      ticketLink: 'https://tickets.example.com/acoustic',
-      status: 'approved',
-      views: 8200,
-      clicks: 420,
-      isPaid: false,
-      createdAt: '1 неделю назад',
-    },
+      onSuccess: () => {
+        toast.success('Концерт успешно добавлен');
+        refetchConcerts();
+      },
+      onError: (error) => toast.error(`Ошибка добавления: ${error}`),
+    }
+  );
+
+  const deleteConcertMutation = useApiMutation<any, string>(
+    (id) => api.concerts.delete(id),
     {
-      id: 3,
-      title: 'Electronic Beats Tour',
-      date: '2026-05-10',
-      time: '22:00',
-      city: 'Казань',
-      venue: 'Пирамида',
-      type: 'DJ сет',
-      description: 'Электронная музыка и невероятное световое шоу',
-      banner: 'https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?w=800',
-      ticketPriceFrom: '1000',
-      ticketPriceTo: '2500',
-      ticketLink: '',
-      status: 'pending',
-      views: 0,
-      clicks: 0,
-      isPaid: false,
-      createdAt: '3 дня назад',
-    },
-    {
-      id: 4,
-      title: 'Rock Arena Show',
-      date: '2026-07-01',
-      time: '19:30',
-      city: 'Екатеринбург',
-      venue: 'DIVS',
-      type: 'Арена шоу',
-      description: 'Рок-концерт с полной шоу-программой',
-      banner: 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?w=800',
-      ticketPriceFrom: '',
-      ticketPriceTo: '',
-      ticketLink: '',
-      status: 'draft',
-      views: 0,
-      clicks: 0,
-      isPaid: false,
-      createdAt: '1 день назад',
-    },
-    {
-      id: 5,
-      title: 'Jazz Evening',
-      date: '2026-03-25',
-      time: '19:00',
-      city: 'Москва',
-      venue: 'Дом музыки',
-      type: 'Клубное выступление',
-      description: 'Джазовый вечер в уютной атмосфере',
-      banner: 'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?w=800',
-      ticketPriceFrom: '3000',
-      ticketPriceTo: '5000',
-      ticketLink: 'https://tickets.example.com/jazz',
-      status: 'rejected',
-      rejectionReason: 'Баннер не соответствует требованиям. Минимальное разрешение: 400x600px. Пожалуйста, загрузите баннер в более высоком качестве с вертикальной ориентацией.',
-      views: 0,
-      clicks: 0,
-      isPaid: false,
-      createdAt: '2 недели назад',
-    },
-  ]);
+      onSuccess: () => {
+        toast.success('Концерт удален');
+        refetchConcerts();
+      },
+      onError: (error) => toast.error(`Ошибка удаления: ${error}`),
+    }
+  );
 
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -185,28 +151,53 @@ export function ConcertsPage({ userCoins, onCoinsUpdate }: ConcertsPageProps) {
     ticketPriceTo: string;
     ticketLink: string;
   }, isDraft: boolean = false) => {
-    const newConcert: ConcertItem = {
-      id: Date.now(),
+    // Подготовка данных для API
+    const concertData = {
       title: data.title,
-      date: data.date,
-      time: data.time,
+      event_date: data.date,
+      event_time: data.time,
       city: data.city,
       venue: data.venue,
-      type: data.type,
+      event_type: data.type,
       description: data.description,
-      banner: data.banner || 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800',
-      ticketPriceFrom: data.ticketPriceFrom,
-      ticketPriceTo: data.ticketPriceTo,
-      ticketLink: data.ticketLink,
+      banner_url: data.banner,
+      ticket_price_from: data.ticketPriceFrom ? parseInt(data.ticketPriceFrom) : null,
+      ticket_price_to: data.ticketPriceTo ? parseInt(data.ticketPriceTo) : null,
+      ticket_url: data.ticketLink,
       status: isDraft ? 'draft' : 'pending',
-      views: 0,
-      clicks: 0,
-      isPaid: false,
-      createdAt: 'Только что',
     };
 
-    setConcerts([newConcert, ...concerts]);
-    setShowUploadModal(false);
+    try {
+      const result = await createConcertMutation.mutateAsync(concertData);
+
+      if (result.success) {
+        // Оптимистичное добавление в UI
+        const newConcert: ConcertItem = {
+          id: result.data?.id || Date.now(),
+          title: data.title,
+          date: data.date,
+          time: data.time,
+          city: data.city,
+          venue: data.venue,
+          type: data.type,
+          description: data.description,
+          banner: data.banner || 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800',
+          ticketPriceFrom: data.ticketPriceFrom,
+          ticketPriceTo: data.ticketPriceTo,
+          ticketLink: data.ticketLink,
+          status: isDraft ? 'draft' : 'pending',
+          views: 0,
+          clicks: 0,
+          isPaid: false,
+          createdAt: 'Только что',
+        };
+
+        setConcerts([newConcert, ...concerts]);
+        setShowUploadModal(false);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+    }
   };
 
   // Оплата продвижения
@@ -240,6 +231,8 @@ export function ConcertsPage({ userCoins, onCoinsUpdate }: ConcertsPageProps) {
   // Удаление концерта
   const handleDeleteConcert = (concertId: number) => {
     if (confirm('Вы уверены, что хотите удалить этот концерт?')) {
+      deleteConcertMutation.mutate(concertId.toString());
+      // Оптимистичное обновление UI
       setConcerts(concerts.filter(c => c.id !== concertId));
     }
   };
@@ -416,11 +409,16 @@ export function ConcertsPage({ userCoins, onCoinsUpdate }: ConcertsPageProps) {
         transition={{ delay: 0.3 }}
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6"
       >
-        {filteredConcerts.length === 0 ? (
+        {isLoadingConcerts ? (
+          <div className="col-span-full p-12 rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 text-center">
+            <Loader2 className="w-16 h-16 text-purple-400 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-300 text-lg">Загрузка концертов...</p>
+          </div>
+        ) : filteredConcerts.length === 0 ? (
           <div className="col-span-full p-12 rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 border-dashed text-center">
             <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-300 text-lg mb-4">
-              {searchQuery ? 'Концерты не найдены' : 'У вас пока нет концертов'}
+              {concertsError ? `Ошибка: ${concertsError}` : searchQuery ? 'Концерты не найдены' : 'У вас пока нет концертов'}
             </p>
             {!searchQuery && (
               <motion.button

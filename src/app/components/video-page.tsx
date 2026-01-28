@@ -1,12 +1,15 @@
 import { Play, Pause, Upload, Video as VideoIcon, Image as ImageIcon, Eye, ThumbsUp, Trash2, X, Check, Clock, XCircle, Coins, AlertCircle, Loader2, Filter, Search, Edit2, Sparkles, TrendingUp, Calendar, Share2, Link as LinkIcon, Youtube } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { ImageWithFallback } from '@/app/components/figma/ImageWithFallback';
 import { VideoPitchingModal } from '@/app/components/video-pitching-modal';
 import { useSubscription, subscriptionHelpers } from '@/contexts/SubscriptionContext';
 import { VideoUploadModal } from '@/app/components/video-upload-modal';
 import { VideoDetailPage } from '@/app/components/video-detail-page';
 import { getVideoInfo, isValidVideoUrl } from '@/utils/video-utils';
+import { api } from '@/lib/api-client';
+import { useApiQuery, useApiMutation } from '@/hooks/useApiQuery';
+import { toast } from 'sonner';
 
 type VideoStatus = 'draft' | 'pending' | 'approved' | 'rejected';
 type VideoSource = 'file' | 'link';
@@ -55,130 +58,77 @@ interface VideoPageProps {
 }
 
 export function VideoPage({ userCoins, onCoinsUpdate }: VideoPageProps) {
-  const [videos, setVideos] = useState<VideoItem[]>([
+  // API запросы
+  const { data: apiVideos, isLoading: isLoadingVideos, error: videosError, refetch: refetchVideos } = useApiQuery<any[]>(
+    () => api.videos.list(),
     {
-      id: 1,
-      title: 'Midnight Dreams - Official Music Video',
-      thumbnail: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
-      category: 'Музыкальный клип',
-      description: 'Визуальная одиссея в стиле 80-х с неоновыми огнями и ретро-футуристическими локациями. Погружение в атмосферу синтвейв культуры с элементами киберпанка.',
-      tags: ['musicvideo', 'official', 'electronic', 'synthwave', '80s'],
-      duration: '3:45',
-      views: 15400,
-      likes: 1850,
-      status: 'approved',
-      uploadedAt: '3 дня назад',
-      isPaid: true,
-      artist: 'Neon Pulse',
-      genre: 'Synthwave / Electronic',
-      releaseDate: '2024-01-20',
-      creators: {
-        director: 'Алексей Смирнов',
-        lightingDirector: 'Мария Волкова',
-        scriptwriter: 'Дмитрий Козлов',
-        sfxArtist: 'Иван Петров',
-        cinematographer: 'Анна Сергеева',
-        editor: 'Михаил Новиков',
-        producer: 'Елена Белова'
-      }
+      onError: (error) => toast.error(`Ошибка загрузки видео: ${error}`),
+    }
+  );
+
+  // Преобразование данных API в формат компонента
+  const mapApiVideoToVideo = useCallback((apiVideo: any): VideoItem => ({
+    id: apiVideo.id,
+    title: apiVideo.title || '',
+    thumbnail: apiVideo.thumbnail_url || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
+    videoFile: apiVideo.video_url,
+    videoUrl: apiVideo.external_url,
+    videoSource: apiVideo.external_url ? 'link' : 'file',
+    category: apiVideo.category || 'Другое',
+    description: apiVideo.description || '',
+    tags: apiVideo.tags || [],
+    duration: apiVideo.duration || '0:00',
+    views: apiVideo.view_count || 0,
+    likes: apiVideo.like_count || 0,
+    status: apiVideo.status || 'draft',
+    rejectionReason: apiVideo.rejection_reason,
+    uploadedAt: apiVideo.created_at ? new Date(apiVideo.created_at).toLocaleDateString('ru-RU') : '',
+    isPaid: apiVideo.is_promoted || false,
+    artist: apiVideo.artist_name || '',
+    genre: apiVideo.genre || '',
+    releaseDate: apiVideo.release_date || '',
+    creators: {
+      director: apiVideo.creators?.director || '',
+      lightingDirector: apiVideo.creators?.lighting_director,
+      scriptwriter: apiVideo.creators?.scriptwriter,
+      sfxArtist: apiVideo.creators?.sfx_artist,
+      cinematographer: apiVideo.creators?.cinematographer,
+      editor: apiVideo.creators?.editor,
+      producer: apiVideo.creators?.producer,
     },
+  }), []);
+
+  const [videos, setVideos] = useState<VideoItem[]>([]);
+
+  // Обновление состояния при получении данных из API
+  useEffect(() => {
+    if (apiVideos && Array.isArray(apiVideos)) {
+      setVideos(apiVideos.map(mapApiVideoToVideo));
+    }
+  }, [apiVideos, mapApiVideoToVideo]);
+
+  // Мутации для создания/удаления
+  const createVideoMutation = useApiMutation<any, any>(
+    (data) => api.videos.create(data),
     {
-      id: 2,
-      title: 'Electric Soul - Behind The Scenes',
-      thumbnail: 'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=800',
-      category: 'Behind the scenes',
-      description: 'Эксклюзивный взгляд за кулисы съемок музыкального клипа Electric Soul. Процесс создания от идеи до финального кадра.',
-      tags: ['bts', 'making', 'studio', 'production'],
-      duration: '8:20',
-      views: 8200,
-      likes: 920,
-      status: 'approved',
-      uploadedAt: '1 неделю назад',
-      isPaid: false,
-      artist: 'Urban Echo',
-      genre: 'Alternative Rock',
-      releaseDate: '2024-01-15',
-      creators: {
-        director: 'Сергей Иванов',
-        cinematographer: 'Ольга Морозова',
-        editor: 'Павел Соколов',
-        producer: 'Наталья Кузнецова'
-      }
-    },
+      onSuccess: () => {
+        toast.success('Видео успешно загружено');
+        refetchVideos();
+      },
+      onError: (error) => toast.error(`Ошибка загрузки: ${error}`),
+    }
+  );
+
+  const deleteVideoMutation = useApiMutation<any, string>(
+    (id) => api.videos.delete(id),
     {
-      id: 3,
-      title: 'Live Performance @ Moscow',
-      thumbnail: 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
-      category: 'Live выступление',
-      description: 'Живое выступление на главной сцене московского фестиваля MusicPulse. Энергичный сет с лучшими треками.',
-      tags: ['live', 'concert', 'moscow', 'festival'],
-      duration: '45:12',
-      views: 0,
-      likes: 0,
-      status: 'pending',
-      uploadedAt: '2 дня назад',
-      isPaid: false,
-      artist: 'DJ Spectrum',
-      genre: 'Electronic / House',
-      releaseDate: '2024-01-18',
-      creators: {
-        director: 'Андрей Лебедев',
-        lightingDirector: 'Виктор Попов',
-        cinematographer: 'Светлана Федорова',
-        editor: 'Константин Орлов'
-      }
-    },
-    {
-      id: 4,
-      title: 'Summer Vibes Lyric Video',
-      thumbnail: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800',
-      category: 'Лирик-видео',
-      description: 'Яркое лирик-видео с анимированным текстом и летней атмосферой. Идеально для солнечного настроения.',
-      tags: ['lyric', 'animation', 'summer', 'positive'],
-      duration: '3:28',
-      views: 0,
-      likes: 0,
-      status: 'draft',
-      uploadedAt: '5 дней назад',
-      isPaid: false,
-      artist: 'Sunny Day',
-      genre: 'Pop / R&B',
-      releaseDate: '2024-01-10',
-      creators: {
-        director: 'Максим Романов',
-        scriptwriter: 'Юлия Титова',
-        sfxArtist: 'Артем Григорьев',
-        editor: 'Денис Захаров'
-      }
-    },
-    {
-      id: 5,
-      title: 'Urban Jungle Music Video',
-      thumbnail: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800',
-      category: 'Музыкальный клип',
-      description: 'Концептуальный клип в городском стиле с элементами стрит-арта и урбанистической эстетики.',
-      tags: ['musicvideo', 'urban', 'hiphop', 'streetart'],
-      duration: '4:15',
-      views: 0,
-      likes: 0,
-      status: 'rejected',
-      rejectionReason: 'Низкое качество видео. Минимальное разрешение: 1080p (Full HD). Пожалуйста, загрузите видео в более высоком качестве.',
-      uploadedAt: '2 недели назад',
-      isPaid: false,
-      artist: 'Street Poets',
-      genre: 'Hip-Hop / Rap',
-      releaseDate: '2024-01-05',
-      creators: {
-        director: 'Игорь Васильев',
-        lightingDirector: 'Татьяна Никитина',
-        scriptwriter: 'Роман Медведев',
-        sfxArtist: 'Борис Павлов',
-        cinematographer: 'Екатерина Соловьева',
-        editor: 'Владимир Жуков',
-        producer: 'Ирина Макарова'
-      }
-    },
-  ]);
+      onSuccess: () => {
+        toast.success('Видео удалено');
+        refetchVideos();
+      },
+      onError: (error) => toast.error(`Ошибка удаления: ${error}`),
+    }
+  );
 
   // Get subscription limits
   const { subscription } = useSubscription();
@@ -311,36 +261,50 @@ export function VideoPage({ userCoins, onCoinsUpdate }: VideoPageProps) {
     videoUrl: string;
     videoSource: VideoSource;
   }, isDraft: boolean = false) => {
-    const newVideo: VideoItem = {
-      id: Date.now(),
+    // Подготовка данных для API
+    const videoData = {
       title: data.title,
-      thumbnail: data.thumbnail || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
       category: data.category,
       description: data.description,
       tags: data.tags.split(',').map(t => t.trim()).filter(t => t),
-      duration: '3:45', // В реальности определяется из видео
-      views: 0,
-      likes: 0,
+      thumbnail_url: data.thumbnail,
+      external_url: data.videoSource === 'link' ? data.videoUrl : undefined,
       status: isDraft ? 'draft' : 'pending',
-      uploadedAt: 'Только что',
-      isPaid: false,
-      videoSource: data.videoSource,
-      videoUrl: data.videoSource === 'link' ? data.videoUrl : undefined,
-      artist: 'Unknown Artist',
-      genre: 'Unknown Genre',
-      releaseDate: 'Unknown Date',
-      creators: {
-        director: 'Unknown Director',
-        lightingDirector: 'Unknown Lighting Director',
-        scriptwriter: 'Unknown Scriptwriter',
-        sfxArtist: 'Unknown SFX Artist',
-        cinematographer: 'Unknown Cinematographer',
-        editor: 'Unknown Editor',
-        producer: 'Unknown Producer'
-      }
     };
 
-    setVideos([newVideo, ...videos]);
+    try {
+      const result = await createVideoMutation.mutateAsync(videoData);
+
+      if (result.success) {
+        // Оптимистичное добавление в UI
+        const newVideo: VideoItem = {
+          id: result.data?.id || Date.now(),
+          title: data.title,
+          thumbnail: data.thumbnail || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800',
+          category: data.category,
+          description: data.description,
+          tags: data.tags.split(',').map(t => t.trim()).filter(t => t),
+          duration: '0:00',
+          views: 0,
+          likes: 0,
+          status: isDraft ? 'draft' : 'pending',
+          uploadedAt: 'Только что',
+          isPaid: false,
+          videoSource: data.videoSource,
+          videoUrl: data.videoSource === 'link' ? data.videoUrl : undefined,
+          artist: '',
+          genre: '',
+          releaseDate: new Date().toISOString().split('T')[0],
+          creators: {
+            director: '',
+          }
+        };
+
+        setVideos([newVideo, ...videos]);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+    }
   };
 
   // Оплата продвижения
@@ -374,6 +338,8 @@ export function VideoPage({ userCoins, onCoinsUpdate }: VideoPageProps) {
   // Удаление видео
   const handleDeleteVideo = (videoId: number) => {
     if (confirm('Вы уверены, что хотите удалить это видео?')) {
+      deleteVideoMutation.mutate(videoId.toString());
+      // Оптимистичное обновление UI
       setVideos(videos.filter(v => v.id !== videoId));
     }
   };
@@ -614,11 +580,16 @@ export function VideoPage({ userCoins, onCoinsUpdate }: VideoPageProps) {
         transition={{ delay: 0.3 }}
         className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6"
       >
-        {filteredVideos.length === 0 ? (
+        {isLoadingVideos ? (
+          <div className="col-span-full p-12 rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 text-center">
+            <Loader2 className="w-16 h-16 text-purple-400 mx-auto mb-4 animate-spin" />
+            <p className="text-gray-300 text-lg">Загрузка видео...</p>
+          </div>
+        ) : filteredVideos.length === 0 ? (
           <div className="col-span-full p-12 rounded-2xl backdrop-blur-xl bg-white/5 border border-white/10 border-dashed text-center">
             <VideoIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <p className="text-gray-300 text-lg mb-4">
-              {searchQuery ? 'Видео не найдены' : 'У вас пока нет видео'}
+              {videosError ? `Ошибка: ${videosError}` : searchQuery ? 'Видео не найдены' : 'У вас пока нет видео'}
             </p>
             {!searchQuery && (
               <motion.button
