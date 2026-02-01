@@ -21,7 +21,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, name: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
-  signInWithOAuth: (provider: 'google' | 'github') => Promise<void>;
+  signInWithOAuth: (provider: 'google' | 'github' | 'vk') => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   updateProfile: (data: { name?: string; avatar_url?: string }) => Promise<{ error?: string }>;
   clearError: () => void;
@@ -214,15 +214,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const signInWithOAuth = useCallback(async (provider: 'google' | 'github') => {
+  const signInWithOAuth = useCallback(async (provider: 'google' | 'github' | 'vk') => {
     try {
       setError(null);
-      const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
+
+      // VK использует кастомный OIDC провайдер в Supabase
+      // Настраивается в Dashboard -> Authentication -> Providers -> Add provider -> OIDC
+      const providerConfig = provider === 'vk'
+        ? {
+            provider: 'vk' as const,
+            options: {
+              redirectTo: window.location.origin,
+              scopes: 'email',
+            },
+          }
+        : {
+            provider,
+            options: {
+              redirectTo: window.location.origin,
+            },
+          };
+
+      const { error: authError } = await supabase.auth.signInWithOAuth(providerConfig);
 
       if (authError) {
         setError(handleAuthError(authError));

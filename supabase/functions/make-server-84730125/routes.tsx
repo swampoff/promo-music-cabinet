@@ -1,30 +1,47 @@
 import { Hono } from 'npm:hono';
 import * as kv from './kv_store.tsx';
+import * as db from './db-adapter.tsx';
 
 const routes = new Hono();
 
 // ============================================
-// TRACKS API
+// TRACKS API (SQL + KV fallback)
 // ============================================
 
 // Get all tracks for current user
 routes.get('/tracks', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
-    const tracks = await kv.getByPrefix(`track:${userId}:`);
-    
-    // If no tracks, return empty array
-    if (!tracks || tracks.length === 0) {
-      return c.json({ 
-        success: true, 
-        data: [] 
-      });
-    }
-    
-    return c.json({ 
-      success: true, 
-      data: tracks.map(t => typeof t === 'string' ? JSON.parse(t) : t) 
-    });
+
+    // Используем db-adapter который автоматически выбирает KV или SQL
+    const tracks = await db.getTracks(userId);
+
+    // Преобразуем данные из SQL формата в формат фронтенда
+    const formattedTracks = tracks.map((t: any) => ({
+      id: t.id,
+      title: t.title || '',
+      cover_url: t.cover_url || null,
+      audio_url: t.audio_url || null,
+      genre: t.genre || '',
+      description: t.description || '',
+      tags: t.tags || [],
+      release_year: t.release_year || new Date().getFullYear(),
+      label: t.label || '',
+      artist_name: t.artist_name || '',
+      artist_id: t.artist_id,
+      duration: t.duration || '0:00',
+      play_count: t.plays_count || t.plays || 0,
+      like_count: t.likes_count || t.likes || 0,
+      status: t.status || 'draft',
+      rejection_reason: t.rejection_reason || null,
+      is_promoted: t.is_promoted || false,
+      created_at: t.created_at,
+      updated_at: t.updated_at,
+      credits: t.credits || {},
+      rights: t.rights || {},
+    }));
+
+    return c.json({ success: true, data: formattedTracks });
   } catch (error) {
     console.error('Error fetching tracks:', error);
     return c.json({ success: false, error: String(error) }, 500);
@@ -35,16 +52,14 @@ routes.get('/tracks', async (c) => {
 routes.get('/tracks/:id', async (c) => {
   try {
     const trackId = c.req.param('id');
-    const userId = c.req.header('X-User-Id') || 'demo-user';
-    const key = `track:${userId}:${trackId}`;
-    
-    const track = await kv.get(key);
-    
+
+    const track = await db.getTrackById(trackId);
+
     if (!track) {
       return c.json({ success: false, error: 'Track not found' }, 404);
     }
-    
-    return c.json({ success: true, data: JSON.parse(track) });
+
+    return c.json({ success: true, data: track });
   } catch (error) {
     console.error('Error fetching track:', error);
     return c.json({ success: false, error: String(error) }, 500);
@@ -56,23 +71,28 @@ routes.post('/tracks', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
     const body = await c.req.json();
-    
-    const trackId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const track = {
-      id: trackId,
-      ...body,
-      userId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      plays: 0,
-      likes: 0,
-      downloads: 0
+
+    const trackData = {
+      artist_id: userId,
+      title: body.title,
+      description: body.description || null,
+      genre: body.genre || null,
+      tags: body.tags || [],
+      release_year: body.release_year || new Date().getFullYear(),
+      label: body.label || null,
+      artist_name: body.artist_name || null,
+      audio_url: body.audio_url || null,
+      cover_url: body.cover_url || null,
+      duration: body.duration || null,
+      status: body.status || 'draft',
+      plays_count: 0,
+      likes_count: 0,
+      shares_count: 0,
     };
-    
-    const key = `track:${userId}:${trackId}`;
-    await kv.set(key, JSON.stringify(track));
-    
-    console.log(`Track created: ${key}`);
+
+    const track = await db.createTrack(trackData);
+
+    console.log(`Track created: ${track.id}`);
     return c.json({ success: true, data: track }, 201);
   } catch (error) {
     console.error('Error creating track:', error);
@@ -84,24 +104,15 @@ routes.post('/tracks', async (c) => {
 routes.put('/tracks/:id', async (c) => {
   try {
     const trackId = c.req.param('id');
-    const userId = c.req.header('X-User-Id') || 'demo-user';
-    const key = `track:${userId}:${trackId}`;
-    
-    const existing = await kv.get(key);
-    if (!existing) {
+    const body = await c.req.json();
+
+    const track = await db.updateTrack(trackId, body);
+
+    if (!track) {
       return c.json({ success: false, error: 'Track not found' }, 404);
     }
-    
-    const body = await c.req.json();
-    const track = {
-      ...JSON.parse(existing),
-      ...body,
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(key, JSON.stringify(track));
-    
-    console.log(`Track updated: ${key}`);
+
+    console.log(`Track updated: ${trackId}`);
     return c.json({ success: true, data: track });
   } catch (error) {
     console.error('Error updating track:', error);
@@ -114,11 +125,10 @@ routes.delete('/tracks/:id', async (c) => {
   try {
     const trackId = c.req.param('id');
     const userId = c.req.header('X-User-Id') || 'demo-user';
-    const key = `track:${userId}:${trackId}`;
-    
-    await kv.del(key);
-    
-    console.log(`Track deleted: ${key}`);
+
+    await db.deleteTrack(trackId, userId);
+
+    console.log(`Track deleted: ${trackId}`);
     return c.json({ success: true });
   } catch (error) {
     console.error('Error deleting track:', error);
@@ -166,41 +176,21 @@ routes.get('/analytics/track/:id', async (c) => {
 routes.post('/analytics/track/:id/play', async (c) => {
   try {
     const trackId = c.req.param('id');
-    const userId = c.req.header('X-User-Id') || 'demo-user';
-    const analyticsKey = `analytics:${userId}:track:${trackId}`;
-    const trackKey = `track:${userId}:${trackId}`;
-    
-    // Update analytics
-    let analytics = await kv.get(analyticsKey);
-    let analyticsData;
-    
-    if (!analytics) {
-      analyticsData = {
-        trackId,
-        plays: 1,
-        likes: 0,
-        downloads: 0,
-        shares: 0,
-        comments: 0,
-        dailyStats: []
-      };
-    } else {
-      analyticsData = JSON.parse(analytics);
-      analyticsData.plays = (analyticsData.plays || 0) + 1;
-    }
-    
-    await kv.set(analyticsKey, JSON.stringify(analyticsData));
-    
-    // Update track plays count
-    const track = await kv.get(trackKey);
-    if (track) {
-      const trackData = JSON.parse(track);
-      trackData.plays = (trackData.plays || 0) + 1;
-      await kv.set(trackKey, JSON.stringify(trackData));
-    }
-    
+
+    // Используем db-adapter для инкремента прослушиваний
+    await db.incrementTrackPlays(trackId);
+
+    // Получаем обновленный трек для ответа
+    const track = await db.getTrackById(trackId);
+
     console.log(`Track play recorded: ${trackId}`);
-    return c.json({ success: true, data: analyticsData });
+    return c.json({
+      success: true,
+      data: {
+        trackId,
+        plays: track?.plays_count || track?.plays || 1,
+      }
+    });
   } catch (error) {
     console.error('Error recording play:', error);
     return c.json({ success: false, error: String(error) }, 500);
@@ -262,29 +252,53 @@ routes.post('/concerts', async (c) => {
 });
 
 // ============================================
-// VIDEOS API
+// VIDEOS API (SQL + KV fallback)
 // ============================================
 
 // Get all videos
 routes.get('/videos', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
-    const videos = await kv.getByPrefix(`video:${userId}:`);
-    
-    // If no videos, return empty array
-    if (!videos || videos.length === 0) {
-      return c.json({ 
-        success: true, 
-        data: [] 
-      });
-    }
-    
-    return c.json({ 
-      success: true, 
-      data: videos.map(v => typeof v === 'string' ? JSON.parse(v) : v) 
-    });
+
+    const videos = await db.getVideos(userId);
+
+    // Преобразуем данные из SQL формата
+    const formattedVideos = videos.map((v: any) => ({
+      id: v.id,
+      title: v.title || '',
+      description: v.description || '',
+      video_url: v.video_url || v.youtube_url || null,
+      youtube_url: v.youtube_url || null,
+      thumbnail_url: v.thumbnail_url || null,
+      artist_id: v.artist_id,
+      duration: v.duration || null,
+      views_count: v.views_count || v.views || 0,
+      likes_count: v.likes_count || v.likes || 0,
+      status: v.status || 'draft',
+      created_at: v.created_at,
+      updated_at: v.updated_at,
+    }));
+
+    return c.json({ success: true, data: formattedVideos });
   } catch (error) {
     console.error('Error fetching videos:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Get single video
+routes.get('/videos/:id', async (c) => {
+  try {
+    const videoId = c.req.param('id');
+    const video = await db.getVideoById(videoId);
+
+    if (!video) {
+      return c.json({ success: false, error: 'Video not found' }, 404);
+    }
+
+    return c.json({ success: true, data: video });
+  } catch (error) {
+    console.error('Error fetching video:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -294,25 +308,63 @@ routes.post('/videos', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
     const body = await c.req.json();
-    
-    const videoId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const video = {
-      id: videoId,
-      ...body,
-      userId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      views: 0,
-      likes: 0
+
+    const videoData = {
+      artist_id: userId,
+      title: body.title,
+      description: body.description || null,
+      video_url: body.video_url || null,
+      youtube_url: body.youtube_url || null,
+      thumbnail_url: body.thumbnail_url || null,
+      duration: body.duration || null,
+      status: body.status || 'draft',
+      views_count: 0,
+      likes_count: 0,
+      shares_count: 0,
     };
-    
-    const key = `video:${userId}:${videoId}`;
-    await kv.set(key, JSON.stringify(video));
-    
-    console.log(`Video created: ${key}`);
+
+    const video = await db.createVideo(videoData);
+
+    console.log(`Video created: ${video.id}`);
     return c.json({ success: true, data: video }, 201);
   } catch (error) {
     console.error('Error creating video:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Update video
+routes.put('/videos/:id', async (c) => {
+  try {
+    const videoId = c.req.param('id');
+    const body = await c.req.json();
+
+    const video = await db.updateVideo(videoId, body);
+
+    if (!video) {
+      return c.json({ success: false, error: 'Video not found' }, 404);
+    }
+
+    console.log(`Video updated: ${videoId}`);
+    return c.json({ success: true, data: video });
+  } catch (error) {
+    console.error('Error updating video:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Delete video
+routes.delete('/videos/:id', async (c) => {
+  try {
+    const videoId = c.req.param('id');
+    const userId = c.req.header('X-User-Id') || 'demo-user';
+
+    await db.deleteVideo(videoId, userId);
+
+    console.log(`Video deleted: ${videoId}`);
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting video:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -509,34 +561,111 @@ routes.post('/coins/transactions', async (c) => {
 });
 
 // ============================================
-// PROFILE API
+// PROFILE API (SQL + KV fallback)
 // ============================================
 
 // Get user profile
 routes.get('/profile', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
-    const key = `profile:${userId}`;
-    
-    const profile = await kv.get(key);
-    
-    if (!profile) {
-      return c.json({ 
-        success: true, 
+
+    const artist = await db.getArtistByUserId(userId);
+
+    if (!artist) {
+      // Возвращаем дефолтный профиль если не найден
+      return c.json({
+        success: true,
         data: {
-          userId,
-          name: 'Demo Artist',
-          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&h=200&fit=crop',
-          subscribers: 0,
-          totalPlays: 0,
-          totalTracks: 0
+          id: userId,
+          user_id: userId,
+          username: 'demo',
+          full_name: 'Demo Artist',
+          email: null,
+          avatar_url: null,
+          bio: null,
+          city: null,
+          total_plays: 0,
+          total_followers: 0,
+          coins_balance: 0,
         }
       });
     }
-    
-    return c.json({ success: true, data: JSON.parse(profile) });
+
+    // Преобразуем данные из SQL формата
+    const profile = {
+      id: artist.id,
+      user_id: artist.user_id || artist.id,
+      username: artist.username || '',
+      full_name: artist.full_name || '',
+      email: artist.email || null,
+      avatar_url: artist.avatar_url || null,
+      cover_url: artist.cover_url || null,
+      bio: artist.bio || null,
+      city: artist.city || null,
+      country: artist.country || null,
+      website: artist.website || null,
+      social_links: artist.social_links || {},
+      streaming_links: artist.streaming_links || {},
+      total_plays: artist.total_plays || 0,
+      total_followers: artist.total_followers || 0,
+      coins_balance: artist.coins_balance || 0,
+      total_coins_earned: artist.total_coins_earned || 0,
+      total_coins_spent: artist.total_coins_spent || 0,
+      created_at: artist.created_at,
+      updated_at: artist.updated_at,
+    };
+
+    return c.json({ success: true, data: profile });
   } catch (error) {
     console.error('Error fetching profile:', error);
+    return c.json({ success: false, error: String(error) }, 500);
+  }
+});
+
+// Create or link profile (for new signups and migrated users)
+routes.post('/profile', async (c) => {
+  try {
+    const userId = c.req.header('X-User-Id') || 'demo-user';
+    const body = await c.req.json();
+    const email = body.email?.toLowerCase().trim();
+
+    // 1. Check if user already has a profile
+    const existingProfile = await db.getArtistByUserId(userId);
+    if (existingProfile) {
+      console.log(`Profile already exists for user: ${userId}`);
+      return c.json({ success: true, data: existingProfile });
+    }
+
+    // 2. Check if there's a migrated artist with the same email
+    if (email) {
+      const migratedArtist = await db.getArtistByEmail(email);
+      if (migratedArtist) {
+        // Link migrated profile to new auth user by updating the id
+        console.log(`Linking migrated artist ${migratedArtist.id} to new user ${userId}`);
+
+        // Update the artist record with the new user's id
+        const linkedProfile = await db.linkArtistToUser(migratedArtist.id, userId);
+
+        return c.json({
+          success: true,
+          data: linkedProfile,
+          message: 'Profile linked from migrated account'
+        });
+      }
+    }
+
+    // 3. Create new profile
+    const newProfile = await db.createArtist({
+      id: userId,
+      email: email,
+      username: body.username || email?.split('@')[0] || `user_${Date.now()}`,
+      full_name: body.full_name || body.name || '',
+    });
+
+    console.log(`New profile created: ${userId}`);
+    return c.json({ success: true, data: newProfile }, 201);
+  } catch (error) {
+    console.error('Error creating/linking profile:', error);
     return c.json({ success: false, error: String(error) }, 500);
   }
 });
@@ -546,19 +675,17 @@ routes.put('/profile', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
     const body = await c.req.json();
-    const key = `profile:${userId}`;
-    
-    const existing = await kv.get(key);
-    const profile = {
-      ...(existing ? JSON.parse(existing) : {}),
-      ...body,
-      userId,
-      updatedAt: new Date().toISOString()
-    };
-    
-    await kv.set(key, JSON.stringify(profile));
-    
-    console.log(`Profile updated: ${key}`);
+
+    // Сначала получаем текущий профиль чтобы найти id
+    const existingArtist = await db.getArtistByUserId(userId);
+
+    if (!existingArtist) {
+      return c.json({ success: false, error: 'Profile not found' }, 404);
+    }
+
+    const profile = await db.updateArtist(existingArtist.id, body);
+
+    console.log(`Profile updated: ${existingArtist.id}`);
     return c.json({ success: true, data: profile });
   } catch (error) {
     console.error('Error updating profile:', error);
@@ -567,56 +694,17 @@ routes.put('/profile', async (c) => {
 });
 
 // ============================================
-// STATS API (Dashboard)
+// STATS API (Dashboard) - SQL + KV fallback
 // ============================================
 
 // Get dashboard stats
 routes.get('/stats/dashboard', async (c) => {
   try {
     const userId = c.req.header('X-User-Id') || 'demo-user';
-    
-    // Get tracks count
-    const tracks = await kv.getByPrefix(`track:${userId}:`);
-    const tracksCount = tracks.length;
-    
-    // Get total plays from all tracks
-    let totalPlays = 0;
-    let totalLikes = 0;
-    let totalDownloads = 0;
-    
-    tracks.forEach(trackStr => {
-      const track = JSON.parse(trackStr);
-      totalPlays += track.plays || 0;
-      totalLikes += track.likes || 0;
-      totalDownloads += track.downloads || 0;
-    });
-    
-    // Get coins balance
-    const balanceKey = `coins:balance:${userId}`;
-    const balance = await kv.get(balanceKey);
-    const coinsBalance = balance ? parseInt(balance) : 0;
-    
-    // Get donations count and total
-    const donations = await kv.getByPrefix(`donation:${userId}:`);
-    const donationsCount = donations.length;
-    let totalDonations = 0;
-    
-    donations.forEach(donationStr => {
-      const donation = JSON.parse(donationStr);
-      totalDonations += donation.amount || 0;
-    });
-    
-    const stats = {
-      totalPlays,
-      totalLikes,
-      totalDownloads,
-      tracksCount,
-      coinsBalance,
-      donationsCount,
-      totalDonations,
-      updatedAt: new Date().toISOString()
-    };
-    
+
+    // Используем db-adapter для получения статистики
+    const stats = await db.getDashboardStats(userId);
+
     return c.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);

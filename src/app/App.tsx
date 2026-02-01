@@ -1,4 +1,4 @@
-import { Music2, Home, User, Video, Calendar, Newspaper, DollarSign, TrendingUp, BarChart3, MessageSquare, User as UserIcon, Coins, Menu, X, Target, Rocket, Crown, Image as ImageIcon, Bell, Wallet } from 'lucide-react';
+import { Music2, Home, User, Video, Calendar, Newspaper, DollarSign, TrendingUp, BarChart3, MessageSquare, User as UserIcon, Coins, Menu, X, Target, Rocket, Crown, Image as ImageIcon, Bell, Wallet, Loader2, LogOut } from 'lucide-react';
 import { HomePage } from '@/app/components/home-page';
 import { AnalyticsPage } from '@/app/components/analytics-page';
 import { ProfilePage } from '@/app/components/profile-page';
@@ -26,11 +26,13 @@ import { TestStorage } from '@/app/pages/TestStorage';
 import { PromotionHub } from '@/app/pages/PromotionHub';
 import { PromotionPitching } from '@/app/pages/PromotionPitching';
 import { BannerHub } from '@/app/pages/BannerHub';
+import { AuthPage } from '@/app/components/auth-page';
+import { ResetPasswordPage } from '@/app/components/reset-password-page';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster } from 'sonner';
 import { projectId, publicAnonKey } from '@/utils/supabase/info';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
 
 const API_URL = `https://${projectId}.supabase.co/functions/v1/make-server-84730125`;
@@ -104,9 +106,38 @@ const DEMO_SUBSCRIPTION = {
   status: 'active' as const,
 };
 
+// Компонент загрузки
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <div className="text-center">
+        <div className="relative w-16 h-16 mx-auto mb-4">
+          <Music2 className="w-full h-full text-cyan-400 animate-pulse" />
+        </div>
+        <div className="flex items-center gap-2 text-white">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>Загрузка...</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Основной компонент приложения (без провайдеров)
 function AppContent() {
+  const { isAuthenticated, isLoading, signOut, userName, userEmail, userAvatar } = useAuth();
+
   const [activeSection, setActiveSection] = useState('home');
+  const [isPasswordReset, setIsPasswordReset] = useState(false);
+
+  // Проверяем URL на наличие токена сброса пароля
+  useEffect(() => {
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+    if (type === 'recovery') {
+      setIsPasswordReset(true);
+    }
+  }, []);
   const [coinsBalance, setCoinsBalance] = useState(1250);
   const [newsItems, setNewsItems] = useState<NewsData[]>([]);
   const [showCoinsModal, setShowCoinsModal] = useState(false);
@@ -133,21 +164,34 @@ function AppContent() {
   
   // Global profile state
   const [profileData, setProfileData] = useState<ProfileData>({
-    name: 'Александр Иванов',
-    username: 'alexandr_music',
-    bio: 'Электронный музыкант из Москвы. Создаю атмосферную музыку на стыке ambient и techno. 🎵',
-    location: 'Москва, Россия',
-    website: 'https://alexandrmusic.com',
-    email: 'contact@alexandrmusic.com',
-    phone: '+7 (999) 123-45-67',
+    name: 'Артист',
+    username: '',
+    bio: '',
+    location: '',
+    website: '',
+    email: '',
+    phone: '',
     avatar: (import.meta.env.VITE_PLACEHOLDER_IMAGE_BASE_URL || 'https://picsum.photos') + "/200/200?sig=artist",
     socials: {
-      instagram: 'alexandr_music',
-      twitter: 'alexandr_music',
+      instagram: '',
+      twitter: '',
       facebook: '',
-      youtube: '@alexandrmusic',
+      youtube: '',
     }
   });
+
+  // Синхронизация данных пользователя с профилем при авторизации
+  useEffect(() => {
+    if (isAuthenticated && (userName || userEmail)) {
+      setProfileData((prev: ProfileData) => ({
+        ...prev,
+        name: userName || prev.name,
+        email: userEmail || prev.email,
+        username: userEmail?.split('@')[0] || prev.username,
+        avatar: userAvatar || prev.avatar,
+      }));
+    }
+  }, [isAuthenticated, userName, userEmail, userAvatar]);
 
   // Global concerts state
   const [globalConcerts, setGlobalConcerts] = useState<ConcertData[]>([
@@ -633,6 +677,42 @@ function AppContent() {
     </div>
   );
 
+  // Показываем загрузку пока проверяется сессия
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  // Показываем страницу сброса пароля если есть recovery токен
+  if (isPasswordReset) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <ResetPasswordPage
+          onSuccess={() => {
+            setIsPasswordReset(false);
+            // Очищаем URL от токена
+            window.history.replaceState(null, '', window.location.pathname);
+          }}
+          onCancel={() => {
+            setIsPasswordReset(false);
+            window.history.replaceState(null, '', window.location.pathname);
+          }}
+        />
+        <Toaster position="top-right" theme="dark" richColors closeButton />
+      </div>
+    );
+  }
+
+  // Если не авторизован - показываем страницу входа
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+        <AuthPage />
+        <Toaster position="top-right" theme="dark" richColors closeButton />
+      </div>
+    );
+  }
+
+  // Авторизованный пользователь - показываем основной контент
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
       {/* Animated background blobs */}
@@ -646,6 +726,23 @@ function AppContent() {
 
       {/* Top Right Actions */}
       <div className="fixed top-4 right-4 z-[120] flex items-center gap-2">
+        {/* Logout Button */}
+        <motion.button
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.05 }}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={signOut}
+          className="w-12 h-12 rounded-xl backdrop-blur-xl bg-white/10 border border-white/20 flex items-center justify-center text-white shadow-lg hover:bg-red-500/20 hover:border-red-400/30 transition-all touch-manipulation relative group"
+        >
+          <LogOut className="w-5 h-5" />
+          {/* Tooltip */}
+          <div className="absolute top-full mt-2 right-0 bg-gray-900 text-white text-xs px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            Выйти
+          </div>
+        </motion.button>
+
         {/* Wallet/Payments Button */}
         <motion.button
           initial={{ opacity: 0, scale: 0.8 }}
@@ -684,27 +781,39 @@ function AppContent() {
 
       {/* Demo Data Button */}
       <DemoDataButton />
-      
+
       {/* Quick Test Button - только в разделе "Мои концерты" */}
       {activeSection === 'concerts' && <QuickTestButton />}
-      
+
       {/* Storage Test Button */}
       <StorageTestButton />
-      
+
       {/* Toast Notifications */}
       <Toaster position="top-right" theme="dark" richColors closeButton />
     </div>
   );
 }
 
+// Промежуточный компонент для передачи userId в SubscriptionProvider
+function AppWithSubscription() {
+  const { userId, isAuthenticated } = useAuth();
+
+  return (
+    <SubscriptionProvider
+      userId={userId || 'anonymous'}
+      initialSubscription={isAuthenticated ? DEMO_SUBSCRIPTION : undefined}
+    >
+      <AppContent />
+    </SubscriptionProvider>
+  );
+}
+
 export default function App() {
   console.log('[App] Rendering with providers');
-  
+
   return (
     <AuthProvider>
-      <SubscriptionProvider userId="demo-user-123" initialSubscription={DEMO_SUBSCRIPTION}>
-        <AppContent />
-      </SubscriptionProvider>
+      <AppWithSubscription />
     </AuthProvider>
   );
 }

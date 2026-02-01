@@ -413,3 +413,430 @@ export function isKVMode() {
 
 // Export supabase client for direct queries when needed
 export { supabase };
+
+// ============================================
+// ARTISTS / PROFILES
+// ============================================
+
+export async function getArtistByUserId(userId: string) {
+  if (STORAGE_MODE === 'sql') {
+    // Для мигрированных данных ищем по id напрямую
+    const { data, error } = await supabase
+      .from('artists')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    // PGRST116 = no rows found - это нормально, вернём null
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(error.message || 'Database error');
+    }
+    return data;
+  } else {
+    return await kv.get(`profile:${userId}`);
+  }
+}
+
+export async function getArtistById(id: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('artists')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  } else {
+    return await kv.get(`profile:${id}`);
+  }
+}
+
+export async function updateArtist(id: string, updates: any) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('artists')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    const profile = await kv.get(`profile:${id}`);
+    const updated = { ...profile, ...updates, updated_at: new Date().toISOString() };
+    await kv.set(`profile:${id}`, updated);
+    return updated;
+  }
+}
+
+export async function getArtistByEmail(email: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('artists')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  } else {
+    // In KV mode, we'd need to search all profiles - not efficient
+    // For now, return null (no migration linking in KV mode)
+    return null;
+  }
+}
+
+export async function createArtist(artist: any) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('artists')
+      .insert({
+        ...artist,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    const id = artist.id || `artist_${Date.now()}`;
+    const newArtist = {
+      ...artist,
+      id,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await kv.set(`profile:${id}`, newArtist);
+    return newArtist;
+  }
+}
+
+export async function linkArtistToUser(oldArtistId: string, newUserId: string) {
+  if (STORAGE_MODE === 'sql') {
+    // Простой подход: возвращаем существующий профиль без изменения id
+    // Пользователь будет использовать старый artist_id из миграции
+    // Фронтенд будет получать профиль по email
+
+    try {
+      const { data: artist, error } = await supabase
+        .from('artists')
+        .select('*')
+        .eq('id', oldArtistId)
+        .single();
+
+      if (error) throw new Error(`Artist not found: ${error.message}`);
+
+      console.log(`Artist ${oldArtistId} found for email-based access. New auth user: ${newUserId}`);
+
+      // Возвращаем существующий профиль - пользователь будет работать с ним
+      // Auth user id != artist id, но это OK - связываем по email
+      return artist;
+    } catch (err: any) {
+      throw new Error(`Link failed: ${err.message || err}`);
+    }
+  } else {
+    // KV mode: just copy the profile with new id
+    const oldProfile = await kv.get(`profile:${oldArtistId}`);
+    if (!oldProfile) throw new Error('Profile not found');
+
+    const newProfile = { ...oldProfile, id: newUserId, updated_at: new Date().toISOString() };
+    await kv.set(`profile:${newUserId}`, newProfile);
+    await kv.del(`profile:${oldArtistId}`);
+    return newProfile;
+  }
+}
+
+// ============================================
+// TRACKS
+// ============================================
+
+export async function getTracks(artistId: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('*')
+      .eq('artist_id', artistId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } else {
+    return await kv.getByPrefix(`track:${artistId}:`);
+  }
+}
+
+export async function getTrackById(id: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('tracks')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  } else {
+    // В KV нужно искать по всем артистам
+    const allTracks = await kv.getByPrefix('track:');
+    return allTracks.find(t => t.id === id);
+  }
+}
+
+export async function createTrack(track: any) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('tracks')
+      .insert(track)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    const id = track.id || `track_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newTrack = { ...track, id, created_at: new Date().toISOString() };
+    await kv.set(`track:${track.artist_id}:${id}`, newTrack);
+    return newTrack;
+  }
+}
+
+export async function updateTrack(id: string, updates: any) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('tracks')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    const allTracks = await kv.getByPrefix('track:');
+    const track = allTracks.find(t => t.id === id);
+    if (!track) throw new Error('Track not found');
+
+    const updated = { ...track, ...updates, updated_at: new Date().toISOString() };
+    await kv.set(`track:${track.artist_id}:${id}`, updated);
+    return updated;
+  }
+}
+
+export async function deleteTrack(id: string, artistId: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { error } = await supabase
+      .from('tracks')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  } else {
+    await kv.del(`track:${artistId}:${id}`);
+  }
+}
+
+export async function incrementTrackPlays(id: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { error } = await supabase.rpc('increment_track_plays', { track_uuid: id });
+    if (error) {
+      // Fallback: обычный update
+      const { data: track } = await supabase.from('tracks').select('plays_count').eq('id', id).single();
+      if (track) {
+        await supabase.from('tracks').update({ plays_count: (track.plays_count || 0) + 1 }).eq('id', id);
+      }
+    }
+  } else {
+    const allTracks = await kv.getByPrefix('track:');
+    const track = allTracks.find(t => t.id === id);
+    if (track) {
+      track.plays = (track.plays || 0) + 1;
+      await kv.set(`track:${track.artist_id}:${id}`, track);
+    }
+  }
+}
+
+// ============================================
+// VIDEOS
+// ============================================
+
+export async function getVideos(artistId: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('videos')
+      .select('*')
+      .eq('artist_id', artistId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } else {
+    return await kv.getByPrefix(`video:${artistId}:`);
+  }
+}
+
+export async function getVideoById(id: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('videos')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  } else {
+    const allVideos = await kv.getByPrefix('video:');
+    return allVideos.find(v => v.id === id);
+  }
+}
+
+export async function createVideo(video: any) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('videos')
+      .insert(video)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    const id = video.id || `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const newVideo = { ...video, id, created_at: new Date().toISOString() };
+    await kv.set(`video:${video.artist_id}:${id}`, newVideo);
+    return newVideo;
+  }
+}
+
+export async function updateVideo(id: string, updates: any) {
+  if (STORAGE_MODE === 'sql') {
+    const { data, error } = await supabase
+      .from('videos')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } else {
+    const allVideos = await kv.getByPrefix('video:');
+    const video = allVideos.find(v => v.id === id);
+    if (!video) throw new Error('Video not found');
+
+    const updated = { ...video, ...updates, updated_at: new Date().toISOString() };
+    await kv.set(`video:${video.artist_id}:${id}`, updated);
+    return updated;
+  }
+}
+
+export async function deleteVideo(id: string, artistId: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { error } = await supabase
+      .from('videos')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  } else {
+    await kv.del(`video:${artistId}:${id}`);
+  }
+}
+
+export async function incrementVideoViews(id: string) {
+  if (STORAGE_MODE === 'sql') {
+    const { error } = await supabase.rpc('increment_video_views', { video_uuid: id });
+    if (error) {
+      // Fallback
+      const { data: video } = await supabase.from('videos').select('views_count').eq('id', id).single();
+      if (video) {
+        await supabase.from('videos').update({ views_count: (video.views_count || 0) + 1 }).eq('id', id);
+      }
+    }
+  } else {
+    const allVideos = await kv.getByPrefix('video:');
+    const video = allVideos.find(v => v.id === id);
+    if (video) {
+      video.views = (video.views || 0) + 1;
+      await kv.set(`video:${video.artist_id}:${id}`, video);
+    }
+  }
+}
+
+// ============================================
+// DASHBOARD STATS
+// ============================================
+
+export async function getDashboardStats(artistId: string) {
+  if (STORAGE_MODE === 'sql') {
+    // Получаем статистику из таблицы artists
+    const { data: artist, error: artistError } = await supabase
+      .from('artists')
+      .select('total_plays, total_followers, coins_balance, total_coins_earned, total_coins_spent')
+      .eq('id', artistId)
+      .single();
+
+    // Получаем количество треков
+    const { count: tracksCount } = await supabase
+      .from('tracks')
+      .select('*', { count: 'exact', head: true })
+      .eq('artist_id', artistId);
+
+    // Получаем количество видео
+    const { count: videosCount } = await supabase
+      .from('videos')
+      .select('*', { count: 'exact', head: true })
+      .eq('artist_id', artistId);
+
+    // Суммируем прослушивания со всех треков
+    const { data: tracksStats } = await supabase
+      .from('tracks')
+      .select('plays_count, likes_count')
+      .eq('artist_id', artistId);
+
+    const totalPlays = tracksStats?.reduce((sum, t) => sum + (t.plays_count || 0), 0) || 0;
+    const totalLikes = tracksStats?.reduce((sum, t) => sum + (t.likes_count || 0), 0) || 0;
+
+    return {
+      totalPlays: artist?.total_plays || totalPlays,
+      totalLikes,
+      totalDownloads: 0,
+      tracksCount: tracksCount || 0,
+      videosCount: videosCount || 0,
+      coinsBalance: artist?.coins_balance || 0,
+      totalFollowers: artist?.total_followers || 0,
+      donationsCount: 0,
+      totalDonations: 0,
+      updatedAt: new Date().toISOString()
+    };
+  } else {
+    // KV mode - существующая логика
+    const tracks = await kv.getByPrefix(`track:${artistId}:`);
+    const videos = await kv.getByPrefix(`video:${artistId}:`);
+
+    let totalPlays = 0;
+    let totalLikes = 0;
+
+    tracks.forEach(track => {
+      totalPlays += track.plays || 0;
+      totalLikes += track.likes || 0;
+    });
+
+    return {
+      totalPlays,
+      totalLikes,
+      totalDownloads: 0,
+      tracksCount: tracks.length,
+      videosCount: videos.length,
+      coinsBalance: 0,
+      totalFollowers: 0,
+      donationsCount: 0,
+      totalDonations: 0,
+      updatedAt: new Date().toISOString()
+    };
+  }
+}
