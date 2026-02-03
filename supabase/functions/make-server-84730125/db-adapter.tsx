@@ -13,7 +13,7 @@ const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const supabase = getSupabaseClient();
 
 // Storage mode: 'kv' or 'sql'
-const STORAGE_MODE = Deno.env.get('STORAGE_MODE') || 'kv';
+const STORAGE_MODE = Deno.env.get('STORAGE_MODE') || 'sql';
 
 console.log(`🗄️ Database Adapter initialized in ${STORAGE_MODE.toUpperCase()} mode`);
 

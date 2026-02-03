@@ -129,7 +129,7 @@ export async function getTransactions(
   );
 
   let query = supabase
-    .from('make_transactions_84730125')
+    .from('transactions')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
@@ -180,15 +180,29 @@ export async function createTransaction(
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  // Map category to transaction_type enum
+  const transactionTypeMap: Record<TransactionType, string> = {
+    'income': 'deposit',
+    'expense': 'subscription',
+    'withdraw': 'withdrawal'
+  };
+
   const { data, error } = await supabase
-    .rpc('create_transaction_84730125', {
-      p_user_id: userId,
-      p_type: type,
-      p_category: category,
-      p_amount: amount,
-      p_description: description,
-      p_metadata: metadata || {}
-    });
+    .from('transactions')
+    .insert({
+      user_id: userId,
+      transaction_type: transactionTypeMap[type] || 'deposit',
+      amount: amount,
+      currency: 'USD',
+      status: 'completed',
+      payment_method: 'card',
+      description: description,
+      net_amount: amount,
+      payment_metadata: metadata || {},
+      processed_at: new Date().toISOString()
+    })
+    .select()
+    .single();
 
   if (error) {
     console.error('Error creating transaction:', error);
@@ -208,9 +222,10 @@ export async function getUserBalance(userId: string) {
   );
 
   const { data, error } = await supabase
-    .from('make_user_balances_84730125')
+    .from('user_wallets')
     .select('*')
     .eq('user_id', userId)
+    .eq('currency', 'USD')
     .single();
 
   if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
@@ -218,23 +233,50 @@ export async function getUserBalance(userId: string) {
     throw new Error(`Failed to fetch balance: ${error.message}`);
   }
 
-  // Если баланса нет, создаём
+  // Если кошелька нет, создаём
   if (!data) {
-    const { data: newBalance, error: createError } = await supabase
-      .from('make_user_balances_84730125')
-      .insert({ user_id: userId })
+    const { data: newWallet, error: createError } = await supabase
+      .from('user_wallets')
+      .insert({
+        user_id: userId,
+        currency: 'USD',
+        available_balance: 0,
+        pending_balance: 0,
+        total_earned: 0,
+        total_withdrawn: 0
+      })
       .select()
       .single();
 
     if (createError) {
-      console.error('Error creating balance:', createError);
-      throw new Error(`Failed to create balance: ${createError.message}`);
+      console.error('Error creating wallet:', createError);
+      throw new Error(`Failed to create wallet: ${createError.message}`);
     }
 
-    return newBalance as UserBalance;
+    // Map to UserBalance interface
+    return {
+      user_id: newWallet.user_id,
+      balance: newWallet.available_balance,
+      available_balance: newWallet.available_balance,
+      pending_balance: newWallet.pending_balance,
+      total_income: newWallet.total_earned,
+      total_expense: 0,
+      total_withdrawn: newWallet.total_withdrawn,
+      transactions_count: 0
+    } as UserBalance;
   }
 
-  return data as UserBalance;
+  // Map user_wallets to UserBalance interface
+  return {
+    user_id: data.user_id,
+    balance: data.available_balance,
+    available_balance: data.available_balance,
+    pending_balance: data.pending_balance,
+    total_income: data.total_earned,
+    total_expense: 0,
+    total_withdrawn: data.total_withdrawn,
+    transactions_count: 0
+  } as UserBalance;
 }
 
 /**
@@ -246,17 +288,38 @@ export async function getUserStats(userId: string) {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  const { data, error } = await supabase
-    .rpc('get_user_stats_84730125', {
-      p_user_id: userId
-    });
+  // Get wallet balance
+  const { data: wallet } = await supabase
+    .from('user_wallets')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('currency', 'USD')
+    .single();
 
-  if (error) {
-    console.error('Error fetching stats:', error);
-    throw new Error(`Failed to fetch stats: ${error.message}`);
-  }
+  // Get transaction counts
+  const { count: totalTransactions } = await supabase
+    .from('transactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId);
 
-  return data && data.length > 0 ? data[0] : null;
+  // Calculate stats from transactions
+  const { data: transactions } = await supabase
+    .from('transactions')
+    .select('amount, transaction_type, status')
+    .eq('user_id', userId)
+    .eq('status', 'completed');
+
+  const stats = {
+    user_id: userId,
+    balance: wallet?.available_balance || 0,
+    total_income: wallet?.total_earned || 0,
+    total_expense: 0,
+    total_withdrawn: wallet?.total_withdrawn || 0,
+    transactions_count: totalTransactions || 0,
+    pending_balance: wallet?.pending_balance || 0
+  };
+
+  return stats;
 }
 
 /**
@@ -269,7 +332,7 @@ export async function getPaymentMethods(userId: string) {
   );
 
   const { data, error } = await supabase
-    .from('make_payment_methods_84730125')
+    .from('payment_methods')
     .select('*')
     .eq('user_id', userId)
     .eq('is_active', true)
@@ -280,7 +343,23 @@ export async function getPaymentMethods(userId: string) {
     throw new Error(`Failed to fetch payment methods: ${error.message}`);
   }
 
-  return data as PaymentMethod[];
+  // Map to PaymentMethod interface
+  return (data || []).map((pm: any) => ({
+    id: pm.id,
+    user_id: pm.user_id,
+    type: pm.method_type || 'card',
+    card_number_masked: pm.card_last4 ? `**** **** **** ${pm.card_last4}` : null,
+    card_holder: pm.account_name,
+    card_expires: pm.card_exp_month && pm.card_exp_year
+      ? `${String(pm.card_exp_month).padStart(2, '0')}/${pm.card_exp_year}`
+      : null,
+    card_brand: pm.card_brand,
+    is_default: pm.is_default,
+    is_verified: pm.is_verified,
+    is_active: pm.is_active,
+    created_at: pm.created_at,
+    updated_at: pm.updated_at
+  })) as PaymentMethod[];
 }
 
 /**
@@ -305,17 +384,40 @@ export async function addPaymentMethod(
   // Если это метод по умолчанию, сбрасываем флаг у остальных
   if (method.is_default) {
     await supabase
-      .from('make_payment_methods_84730125')
+      .from('payment_methods')
       .update({ is_default: false })
       .eq('user_id', userId);
   }
 
+  // Parse card expiry if provided
+  let cardExpMonth: number | null = null;
+  let cardExpYear: number | null = null;
+  if (method.card_expires) {
+    const parts = method.card_expires.split('/');
+    cardExpMonth = parseInt(parts[0], 10);
+    cardExpYear = parseInt(parts[1], 10);
+    if (cardExpYear < 100) cardExpYear += 2000;
+  }
+
+  // Extract last 4 digits from masked card number
+  const cardLast4 = method.card_number_masked
+    ? method.card_number_masked.replace(/\D/g, '').slice(-4)
+    : null;
+
   const { data, error } = await supabase
-    .from('make_payment_methods_84730125')
+    .from('payment_methods')
     .insert({
       user_id: userId,
-      ...method,
-      is_verified: true, // В production нужна верификация
+      method_type: method.type,
+      payment_provider: 'internal',
+      provider_payment_method_id: crypto.randomUUID(),
+      card_brand: method.card_brand,
+      card_last4: cardLast4,
+      card_exp_month: cardExpMonth,
+      card_exp_year: cardExpYear,
+      account_name: method.card_holder,
+      is_default: method.is_default || false,
+      is_verified: true,
       is_active: true
     })
     .select()
@@ -326,7 +428,21 @@ export async function addPaymentMethod(
     throw new Error(`Failed to add payment method: ${error.message}`);
   }
 
-  return data as PaymentMethod;
+  // Map to PaymentMethod interface
+  return {
+    id: data.id,
+    user_id: data.user_id,
+    type: data.method_type,
+    card_number_masked: cardLast4 ? `**** **** **** ${cardLast4}` : null,
+    card_holder: data.account_name,
+    card_expires: method.card_expires,
+    card_brand: data.card_brand,
+    is_default: data.is_default,
+    is_verified: data.is_verified,
+    is_active: data.is_active,
+    created_at: data.created_at,
+    updated_at: data.updated_at
+  } as PaymentMethod;
 }
 
 /**
@@ -342,19 +458,56 @@ export async function createWithdrawRequest(
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  // Get payment method details
+  const { data: paymentMethod, error: pmError } = await supabase
+    .from('payment_methods')
+    .select('*')
+    .eq('id', paymentMethodId)
+    .single();
+
+  if (pmError) {
+    throw new Error('Payment method not found');
+  }
+
+  // Calculate fee (e.g., 2% fee)
+  const fee = amount * 0.02;
+  const netPayout = amount - fee;
+
   const { data, error } = await supabase
-    .rpc('create_withdraw_request_84730125', {
-      p_user_id: userId,
-      p_amount: amount,
-      p_payment_method_id: paymentMethodId
-    });
+    .from('payout_requests')
+    .insert({
+      user_id: userId,
+      amount: amount,
+      currency: 'USD',
+      payout_method: paymentMethod.method_type,
+      payout_details: {
+        payment_method_id: paymentMethodId,
+        card_last4: paymentMethod.card_last4,
+        account_name: paymentMethod.account_name
+      },
+      status: 'pending',
+      payout_fee: fee,
+      net_payout: netPayout
+    })
+    .select()
+    .single();
 
   if (error) {
     console.error('Error creating withdraw request:', error);
     throw new Error(`Failed to create withdraw request: ${error.message}`);
   }
 
-  return data;
+  // Map to WithdrawRequest interface
+  return {
+    id: data.id,
+    user_id: data.user_id,
+    amount: data.amount,
+    fee: data.payout_fee,
+    net_amount: data.net_payout,
+    payment_method_id: paymentMethodId,
+    status: data.status,
+    requested_at: data.created_at
+  } as WithdrawRequest;
 }
 
 /**
@@ -370,7 +523,7 @@ export async function getWithdrawRequests(
   );
 
   let query = supabase
-    .from('make_withdraw_requests_84730125')
+    .from('payout_requests')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
@@ -386,7 +539,21 @@ export async function getWithdrawRequests(
     throw new Error(`Failed to fetch withdraw requests: ${error.message}`);
   }
 
-  return data as WithdrawRequest[];
+  // Map to WithdrawRequest interface
+  return (data || []).map((req: any) => ({
+    id: req.id,
+    user_id: req.user_id,
+    amount: req.amount,
+    fee: req.payout_fee || 0,
+    net_amount: req.net_payout || req.amount,
+    payment_method_id: req.payout_details?.payment_method_id,
+    status: req.status,
+    status_message: req.rejection_reason,
+    requested_at: req.created_at,
+    processed_at: req.processed_at,
+    completed_at: req.processed_at,
+    transaction_id: req.transaction_id
+  })) as WithdrawRequest[];
 }
 
 /**
@@ -403,10 +570,9 @@ export async function getCategoryStats(
   );
 
   let query = supabase
-    .from('make_transactions_84730125')
-    .select('category, amount, net_amount')
+    .from('transactions')
+    .select('transaction_type, amount, net_amount')
     .eq('user_id', userId)
-    .eq('type', type)
     .eq('status', 'completed');
 
   // Фильтр по периоду
@@ -426,19 +592,20 @@ export async function getCategoryStats(
     throw new Error(`Failed to fetch category stats: ${error.message}`);
   }
 
-  // Группировка по категориям
+  // Группировка по типу транзакции
   const stats = data.reduce((acc: any, item: any) => {
-    if (!acc[item.category]) {
-      acc[item.category] = {
-        category: item.category,
+    const category = item.transaction_type || 'other';
+    if (!acc[category]) {
+      acc[category] = {
+        category: category,
         total: 0,
         net_total: 0,
         count: 0
       };
     }
-    acc[item.category].total += Number(item.amount);
-    acc[item.category].net_total += Number(item.net_amount);
-    acc[item.category].count += 1;
+    acc[category].total += Number(item.amount);
+    acc[category].net_total += Number(item.net_amount || item.amount);
+    acc[category].count += 1;
     return acc;
   }, {});
 

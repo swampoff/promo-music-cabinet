@@ -1,0 +1,448 @@
+/**
+ * SUPPORT ADAPTIVE STYLES
+ * Дополнительные адаптивные стили для системы поддержки
+ * Адаптив: 320px → 4K
+ */
+
+/* Scrollbar для списка тикетов */
+.support-tickets-list {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.support-tickets-list::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.support-tickets-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.support-tickets-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.support-tickets-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Scrollbar для чата */
+.support-chat-messages {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+.support-chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.support-chat-messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.support-chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+}
+
+.support-chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Адаптивный текст */
+@media (max-width: 320px) {
+  .support-text-xs {
+    font-size: 10px;
+  }
+  
+  .support-text-sm {
+    font-size: 11px;
+  }
+  
+  .support-text-base {
+    font-size: 12px;
+  }
+}
+
+@media (min-width: 321px) and (max-width: 640px) {
+  .support-text-xs {
+    font-size: 11px;
+  }
+  
+  .support-text-sm {
+    font-size: 12px;
+  }
+  
+  .support-text-base {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1920px) {
+  .support-text-xs {
+    font-size: 13px;
+  }
+  
+  .support-text-sm {
+    font-size: 15px;
+  }
+  
+  .support-text-base {
+    font-size: 17px;
+  }
+  
+  .support-text-lg {
+    font-size: 19px;
+  }
+  
+  .support-text-xl {
+    font-size: 21px;
+  }
+}
+
+/* Адаптивные отступы */
+@media (max-width: 320px) {
+  .support-p-responsive {
+    padding: 8px;
+  }
+  
+  .support-gap-responsive {
+    gap: 6px;
+  }
+}
+
+@media (min-width: 321px) and (max-width: 640px) {
+  .support-p-responsive {
+    padding: 10px;
+  }
+  
+  .support-gap-responsive {
+    gap: 8px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .support-p-responsive {
+    padding: 12px;
+  }
+  
+  .support-gap-responsive {
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1025px) and (max-width: 1919px) {
+  .support-p-responsive {
+    padding: 16px;
+  }
+  
+  .support-gap-responsive {
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1920px) {
+  .support-p-responsive {
+    padding: 24px;
+  }
+  
+  .support-gap-responsive {
+    gap: 20px;
+  }
+}
+
+/* Адаптивные карточки тикетов */
+@media (max-width: 640px) {
+  .support-ticket-card {
+    min-height: 90px;
+  }
+  
+  .support-ticket-avatar {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .support-ticket-card {
+    min-height: 110px;
+  }
+  
+  .support-ticket-avatar {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .support-ticket-card {
+    min-height: 130px;
+  }
+  
+  .support-ticket-avatar {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+/* Фиксированная высота для mobile чата */
+@media (max-width: 767px) {
+  .support-mobile-chat {
+    height: 100dvh; /* Dynamic Viewport Height для мобильных */
+    height: 100vh;
+  }
+  
+  .support-mobile-messages {
+    height: calc(100dvh - 220px);
+    height: calc(100vh - 220px);
+  }
+}
+
+/* Адаптивная сетка статистики */
+@media (max-width: 640px) {
+  .support-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 641px) and (max-width: 768px) {
+  .support-stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .support-stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1025px) {
+  .support-stats-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* Адаптивная сетка списка тикетов */
+@media (max-width: 1023px) {
+  .support-tickets-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .support-chat-container {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .support-tickets-container {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .support-tickets-container {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+  }
+}
+
+/* Плавные переходы */
+.support-transition {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.support-transition-fast {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.support-transition-slow {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover эффекты */
+@media (hover: hover) {
+  .support-hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  .support-hover-glow:hover {
+    box-shadow: 0 0 20px rgba(236, 72, 153, 0.3);
+  }
+}
+
+/* Touch feedback для мобильных */
+@media (hover: none) {
+  .support-touch-feedback:active {
+    transform: scale(0.98);
+    opacity: 0.8;
+  }
+}
+
+/* Адаптивные badges */
+@media (max-width: 640px) {
+  .support-badge {
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 4px;
+  }
+}
+
+@media (min-width: 641px) {
+  .support-badge {
+    padding: 4px 8px;
+    font-size: 11px;
+    border-radius: 6px;
+  }
+}
+
+/* Безопасные зоны для iPhone с вырезом */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .support-safe-bottom {
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  
+  .support-safe-top {
+    padding-top: max(8px, env(safe-area-inset-top));
+  }
+}
+
+/* Оптимизация для retina дисплеев */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .support-border-thin {
+    border-width: 0.5px;
+  }
+}
+
+/* Адаптивный modal/dropdown */
+@media (max-width: 640px) {
+  .support-modal {
+    position: fixed;
+    inset: 0;
+    border-radius: 0;
+    max-width: 100%;
+    max-height: 100%;
+  }
+  
+  .support-dropdown {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 8px;
+    transform: none;
+  }
+}
+
+/* Skeleton loading animation */
+@keyframes support-skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.support-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: support-skeleton-loading 1.5s ease-in-out infinite;
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  .support-transition,
+  .support-transition-fast,
+  .support-transition-slow,
+  .support-skeleton {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Focus visible для клавиатурной навигации */
+.support-focus-visible:focus-visible {
+  outline: 2px solid rgba(236, 72, 153, 0.5);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* Print styles */
+@media print {
+  .support-no-print {
+    display: none !important;
+  }
+  
+  .support-print-full {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .support-high-contrast {
+    border-width: 2px;
+    font-weight: 600;
+  }
+}
+
+/* Dark mode optimization (уже темная тема, но на всякий случай) */
+@media (prefers-color-scheme: dark) {
+  .support-auto-dark {
+    color-scheme: dark;
+  }
+}
+
+/* Landscape orientation на мобильных */
+@media (max-width: 896px) and (orientation: landscape) {
+  .support-landscape-adjust {
+    flex-direction: row;
+  }
+  
+  .support-landscape-mobile-messages {
+    height: calc(100vh - 180px);
+  }
+}
+
+/* Очень маленькие экраны (старые телефоны) */
+@media (max-width: 320px) {
+  .support-mini-hide {
+    display: none;
+  }
+  
+  .support-mini-compact {
+    padding: 4px;
+    font-size: 10px;
+  }
+}
+
+/* Очень большие экраны (4K+) */
+@media (min-width: 2560px) {
+  .support-4k-scale {
+    font-size: 110%;
+  }
+  
+  .support-4k-container {
+    max-width: 2400px;
+    margin: 0 auto;
+  }
+}
+
+/* Tablet landscape */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: landscape) {
+  .support-tablet-landscape {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+}

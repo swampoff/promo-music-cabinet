@@ -32,8 +32,8 @@ routes.get('/tracks', async (c) => {
       duration: t.duration || '0:00',
       play_count: t.plays_count || t.plays || 0,
       like_count: t.likes_count || t.likes || 0,
-      status: t.status || 'draft',
-      rejection_reason: t.rejection_reason || null,
+      status: t.moderation_status || t.status || 'draft',
+      rejection_reason: t.moderation_comment || t.rejection_reason || null,
       is_promoted: t.is_promoted || false,
       created_at: t.created_at,
       updated_at: t.updated_at,
@@ -77,26 +77,28 @@ routes.post('/tracks', async (c) => {
       title: body.title,
       description: body.description || null,
       genre: body.genre || null,
-      tags: body.tags || [],
-      release_year: body.release_year || new Date().getFullYear(),
-      label: body.label || null,
-      artist_name: body.artist_name || null,
       audio_url: body.audio_url || null,
       cover_url: body.cover_url || null,
       duration: body.duration || null,
-      status: body.status || 'draft',
+      lyrics: body.lyrics || null,
+      release_date: body.release_date || null,
+      is_explicit: body.is_explicit || false,
+      moderation_status: body.status || 'pending',
       plays_count: 0,
       likes_count: 0,
       shares_count: 0,
+      is_promoted: false,
+      is_hidden: false,
     };
 
     const track = await db.createTrack(trackData);
 
     console.log(`Track created: ${track.id}`);
     return c.json({ success: true, data: track }, 201);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error creating track:', error);
-    return c.json({ success: false, error: String(error) }, 500);
+    const errorMsg = error?.message || error?.details || JSON.stringify(error);
+    return c.json({ success: false, error: errorMsg }, 500);
   }
 });
 
